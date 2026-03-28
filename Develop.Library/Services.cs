@@ -10,7 +10,7 @@ public sealed class FooService
 
 public interface IBarService
 {
-    public void Execute();
+    void Execute();
 }
 
 public sealed class BarService : IBarService
@@ -22,12 +22,12 @@ public sealed class BarService : IBarService
 
 public interface IMixedService1
 {
-    public void Execute1();
+    void Execute1();
 }
 
 public interface IMixedService2
 {
-    public void Execute2();
+    void Execute2();
 }
 
 public sealed class MixedService : IMixedService1, IMixedService2
@@ -54,7 +54,7 @@ public sealed class DisposalService : IDisposable
 
 public interface IBazService
 {
-    public void Execute();
+    void Execute();
 }
 
 public sealed class DisposalBazService : IBazService, IDisposable

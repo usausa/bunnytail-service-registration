@@ -352,7 +352,7 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
 
         return [];
 
-        bool ClassFilter(INamedTypeSymbol symbol) => symbol.TypeKind == TypeKind.Class;
+        static bool ClassFilter(INamedTypeSymbol symbol) => symbol.TypeKind == TypeKind.Class;
     }
 
     // ------------------------------------------------------------
