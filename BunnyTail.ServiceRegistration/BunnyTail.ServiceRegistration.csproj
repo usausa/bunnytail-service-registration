@@ -27,7 +27,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="SourceGenerateHelper" Version="1.5.1" GeneratePathProperty="true" PrivateAssets="all" />
+    <PackageReference Include="SourceGenerateHelper" Version="1.5.3" GeneratePathProperty="true" PrivateAssets="all" />
   </ItemGroup>
 
 </Project>
