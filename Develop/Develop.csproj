@@ -19,7 +19,7 @@
   <Import Project="..\BunnyTail.ServiceRegistration.props" />
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.5" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.7" />
   </ItemGroup>
 
   <ItemGroup>
