@@ -2,7 +2,6 @@ namespace BunnyTail.ServiceRegistration.Generator;
 
 using System;
 using System.Collections.Immutable;
-using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -76,8 +75,8 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
         }
 
         // Validate parameter
-        if ((symbol.Parameters.Length != 1) ||
-            (symbol.Parameters[0].Type.ToDisplayString() != ServiceCollectionName))
+        var firstParam = symbol.Parameters.Length == 1 ? symbol.Parameters[0] : default;
+        if ((firstParam is null) || (firstParam.Type.ToDisplayString() != ServiceCollectionName))
         {
             return Results.Error<MethodModel>(new DiagnosticInfo(Diagnostics.InvalidMethodParameter, syntax.GetLocation(), symbol.Name));
         }
@@ -100,7 +99,7 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
             containingType.IsValueType,
             symbol.DeclaredAccessibility,
             symbol.Name,
-            symbol.Parameters[0].Name,
+            firstParam.Name,
             new EquatableArray<AttributeModel>(GetAttributeModel(symbol))));
     }
 
@@ -115,7 +114,7 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
                 continue;
             }
 
-            var lifetime = Convert.ToInt32(attributeData.ConstructorArguments[0].Value, CultureInfo.InvariantCulture);
+            var lifetime = (int)attributeData.ConstructorArguments[0].Value!;
             var pattern = attributeData.ConstructorArguments[1].Value?.ToString() ?? string.Empty;
             var assembly = string.Empty;
             var ns = string.Empty;
@@ -158,10 +157,10 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
             context.ReportDiagnostic(info);
         }
 
-        var ignoreInterfaces = option.IgnoreInterface
-            .Split([','], StringSplitOptions.RemoveEmptyEntries)
-            .Concat(IgnoreInterfaces)
-            .ToArray();
+        var parts = option.IgnoreInterface.Split([','], StringSplitOptions.RemoveEmptyEntries);
+        var ignoreInterfaces = new string[parts.Length + IgnoreInterfaces.Length];
+        parts.CopyTo(ignoreInterfaces, 0);
+        IgnoreInterfaces.CopyTo(ignoreInterfaces, parts.Length);
 
         var builder = new SourceBuilder();
         foreach (var group in methods.SelectValue().GroupBy(static x => new { x.Namespace, x.ClassName }))
