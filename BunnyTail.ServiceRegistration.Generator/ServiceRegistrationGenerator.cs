@@ -234,7 +234,7 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
                 .NewLine();
             builder.BeginScope();
 
-            foreach (var attribute in method.Attributes.ToArray())
+            foreach (var attribute in method.Attributes.AsArray())
             {
                 var regex = new Regex(attribute.Pattern, RegexOptions.Compiled);
 
