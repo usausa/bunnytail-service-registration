@@ -6,7 +6,7 @@
 
 ## What is this?
 
-Service registory method generator.
+Service registration method generator.
 
 ## Usage
 
@@ -37,3 +37,12 @@ internal sealed class TestService
 {
 }
 ```
+
+## Attribute Parameters
+
+| Parameter | Description |
+|---|---|
+| `Lifetime` | Service lifetime: `Transient`, `Singleton`, or `Scoped` |
+| `Pattern` | Regex pattern to match class names to register |
+| `Assembly` | Assembly to scan (defaults to the calling assembly) |
+| `Namespace` | Namespace prefix to filter classes |
