@@ -1,4 +1,14 @@
 <Solution>
+  <Folder Name="/Example/">
+    <Project Path="Develop.Library/Develop.Library.csproj" />
+    <Project Path="Develop/Develop.csproj" />
+  </Folder>
+  <Folder Name="/Library/">
+    <Project Path="BunnyTail.ServiceRegistration.Generator/BunnyTail.ServiceRegistration.Generator.csproj" />
+    <Project Path="BunnyTail.ServiceRegistration/BunnyTail.ServiceRegistration.csproj">
+      <BuildDependency Project="BunnyTail.ServiceRegistration.Generator/BunnyTail.ServiceRegistration.Generator.csproj" />
+    </Project>
+  </Folder>
   <Folder Name="/Solution Items/">
     <File Path=".editorconfig" />
     <File Path=".gitattributes" />
@@ -14,11 +24,7 @@
     <File Path="LICENSE" />
     <File Path="README.md" />
   </Folder>
-  <Project Path="BunnyTail.ServiceRegistration/BunnyTail.ServiceRegistration.csproj">
-    <BuildDependency Project="BunnyTail.ServiceRegistration.Generator/BunnyTail.ServiceRegistration.Generator.csproj" />
-  </Project>
-  <Project Path="BunnyTail.ServiceRegistration.Generator/BunnyTail.ServiceRegistration.Generator.csproj" />
-  <Project Path="BunnyTail.ServiceRegistration.Tests/BunnyTail.ServiceRegistration.Tests.csproj" />
-  <Project Path="Develop/Develop.csproj" />
-  <Project Path="Develop.Library/Develop.Library.csproj" />
+  <Folder Name="/Tests/">
+    <Project Path="BunnyTail.ServiceRegistration.Tests/BunnyTail.ServiceRegistration.Tests.csproj" />
+  </Folder>
 </Solution>
