@@ -140,7 +140,10 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
                 }
             }
 
-            list.Add(new AttributeModel(lifetime, pattern, assembly, ns));
+            var locationInfo = attributeData.ApplicationSyntaxReference is { } syntaxRef
+                ? LocationInfo.CreateFrom(syntaxRef.GetSyntax())
+                : null;
+            list.Add(new AttributeModel(lifetime, pattern, assembly, ns, locationInfo));
         }
 
         return list.ToArray();
@@ -168,7 +171,7 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
             context.CancellationToken.ThrowIfCancellationRequested();
 
             builder.Clear();
-            BuildSource(builder, compilation, ignoreInterfaces, group.ToList());
+            BuildSource(context, builder, compilation, ignoreInterfaces, group.ToList());
 
             var filename = MakeFilename(group.Key.Namespace, group.Key.ClassName);
             var source = builder.ToString();
@@ -176,7 +179,7 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
         }
     }
 
-    private static void BuildSource(SourceBuilder builder, Compilation compilation, string[] ignoreInterfaces, List<MethodModel> methods)
+    private static void BuildSource(SourceProductionContext context, SourceBuilder builder, Compilation compilation, string[] ignoreInterfaces, List<MethodModel> methods)
     {
         var ns = methods[0].Namespace;
         var className = methods[0].ClassName;
@@ -236,7 +239,16 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
 
             foreach (var attribute in method.Attributes)
             {
-                var regex = new Regex(attribute.Pattern, RegexOptions.Compiled);
+                Regex regex;
+                try
+                {
+                    regex = new Regex(attribute.Pattern);
+                }
+                catch (ArgumentException)
+                {
+                    context.ReportDiagnostic(new DiagnosticInfo(Diagnostics.InvalidPattern, attribute.Location, attribute.Pattern));
+                    continue;
+                }
 
                 foreach (var namedTypeSymbol in ResolveClasses(compilation, attribute.Assembly))
                 {
@@ -345,13 +357,19 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
             if ((compilation.GetAssemblyOrModuleSymbol(reference) is IAssemblySymbol assemblySymbol) &&
                 String.Equals(assemblySymbol.Identity.Name, assembly, StringComparison.Ordinal))
             {
-                return assemblySymbol.GlobalNamespace.GetTypeMembersRecursive(ClassFilter);
+                return assemblySymbol.GlobalNamespace.GetTypeMembersRecursive(ClassFilter)
+                    .Where(x => compilation.IsSymbolAccessibleWithin(x, compilation.Assembly));
             }
         }
 
         return [];
 
-        static bool ClassFilter(INamedTypeSymbol symbol) => symbol.TypeKind == TypeKind.Class;
+        static bool ClassFilter(INamedTypeSymbol symbol) =>
+            (symbol.TypeKind == TypeKind.Class) &&
+            !symbol.IsStatic &&
+            !symbol.IsAbstract &&
+            !symbol.IsGenericType &&
+            !symbol.IsFileLocal;
     }
 
     // ------------------------------------------------------------

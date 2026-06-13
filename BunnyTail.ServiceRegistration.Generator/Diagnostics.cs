@@ -27,4 +27,12 @@ internal static class Diagnostics
         category: "Usage",
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
+
+    public static DiagnosticDescriptor InvalidPattern { get; } = new(
+        id: "BTSR0004",
+        title: "Invalid regex pattern",
+        messageFormat: "Invalid regex pattern. pattern=[{0}]",
+        category: "Usage",
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
 }

@@ -1,6 +1,7 @@
 namespace Develop.Library;
 
 #pragma warning disable CA1822
+// ReSharper disable ClassNeverInstantiated.Global
 public sealed class FooService
 {
     public void Execute()
@@ -66,4 +67,10 @@ public sealed class DisposalBazService : IBazService, IDisposable
     public void Dispose()
     {
     }
+}
+
+// internal class in reference assembly — must be excluded from scan (no IVT declared)
+internal sealed class InternalLibraryService
+{
+    internal static readonly InternalLibraryService Instance = new();
 }
