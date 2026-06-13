@@ -16,6 +16,7 @@ internal sealed class GenericMatchService<T>
 {
 #pragma warning disable IDE0051
 #pragma warning disable CA1000
+    // ReSharper disable once StaticMemberInGenericType
     internal static readonly GenericMatchService<int> Instance = new();
 #pragma warning restore CA1000
 #pragma warning restore IDE0051
