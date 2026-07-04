@@ -50,6 +50,20 @@ public class GeneratorTest
     }
 
     [Fact]
+    public void DisposableInterfaceIsNotRegisteredAsService()
+    {
+        using var provider = new ServiceCollection()
+            .AddServices()
+            .BuildServiceProvider();
+
+        Assert.NotNull(provider.GetService<DisposalService>());
+        Assert.NotNull(provider.GetService<IBazService>());
+
+        Assert.Null(provider.GetService<IDisposable>());
+        Assert.Null(provider.GetService<IAsyncDisposable>());
+    }
+
+    [Fact]
     public void NamespaceFilterResolvesOnlyMatchingNamespace()
     {
         // Namespace filter: only Sub1 should be registered; Sub2 must be absent.
