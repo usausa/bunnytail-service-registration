@@ -45,9 +45,29 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
                 static (context, _) => GetMethodModel(context))
             .Collect();
 
+        // Method definition diagnostics depend only on the parsed methods, so report them separately.
+        context.RegisterSourceOutput(
+            propertyProvider,
+            static (context, methods) => ReportMethodDiagnostics(context, methods));
+
+        // Symbol resolution stays driven by the CompilationProvider (required for correctness: the
+        // generated registrations depend on the whole compilation, and ForAttributeWithMetadataName
+        // transforms are not re-run when other files change). The resolution is collapsed into an
+        // equatable per-class model, so the actual source emission is skipped while the resolved
+        // registrations are unchanged, instead of regenerating every file on any compilation change.
+        var resolvedProvider = compilationProvider
+            .Combine(valueProvider)
+            .Combine(propertyProvider)
+            .Select(static (provider, token) => Resolve(provider.Left.Left, provider.Left.Right, provider.Right, token));
+
+        context.RegisterSourceOutput(
+            resolvedProvider,
+            static (context, resolved) => ReportResolveDiagnostics(context, resolved));
+
+        var groups = resolvedProvider.SelectMany(static (resolved, _) => resolved.Groups.ToImmutableArray());
         context.RegisterImplementationSourceOutput(
-            compilationProvider.Combine(valueProvider).Combine(propertyProvider),
-            static (context, provider) => Execute(context, provider.Left.Left, provider.Left.Right, provider.Right));
+            groups,
+            static (context, group) => Execute(context, group));
     }
 
     // ------------------------------------------------------------
@@ -65,27 +85,27 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
 
     private static Result<MethodModel> GetMethodModel(GeneratorAttributeSyntaxContext context)
     {
-        var syntax = context.TargetNode;
+        var syntax = (MethodDeclarationSyntax)context.TargetNode;
         var symbol = (IMethodSymbol)context.TargetSymbol;
 
         // Validate method definition
         if (!symbol.IsStatic || !symbol.IsPartialDefinition || !symbol.IsExtensionMethod)
         {
-            return Results.Error<MethodModel>(new DiagnosticInfo(Diagnostics.InvalidMethodDefinition, syntax.GetLocation(), symbol.Name));
+            return Results.Error<MethodModel>(new DiagnosticInfo(Diagnostics.InvalidMethodDefinition, syntax.Identifier.GetLocation(), symbol.Name));
         }
 
         // Validate parameter
         var firstParam = symbol.Parameters.Length == 1 ? symbol.Parameters[0] : default;
         if ((firstParam is null) || (firstParam.Type.ToDisplayString() != ServiceCollectionName))
         {
-            return Results.Error<MethodModel>(new DiagnosticInfo(Diagnostics.InvalidMethodParameter, syntax.GetLocation(), symbol.Name));
+            return Results.Error<MethodModel>(new DiagnosticInfo(Diagnostics.InvalidMethodParameter, syntax.Identifier.GetLocation(), symbol.Name));
         }
 
         // Validate return type
         if ((symbol.ReturnType is not INamedTypeSymbol returnTypeSymbol) ||
             (returnTypeSymbol.ToDisplayString() != ServiceCollectionName))
         {
-            return Results.Error<MethodModel>(new DiagnosticInfo(Diagnostics.InvalidMethodReturnType, syntax.GetLocation(), symbol.Name));
+            return Results.Error<MethodModel>(new DiagnosticInfo(Diagnostics.InvalidMethodReturnType, syntax.Identifier.GetLocation(), symbol.Name));
         }
 
         var containingType = symbol.ContainingType;
@@ -150,199 +170,95 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
     }
 
     // ------------------------------------------------------------
-    // Generator
+    // Resolver
     // ------------------------------------------------------------
 
-    private static void Execute(SourceProductionContext context, Compilation compilation, OptionModel option, ImmutableArray<Result<MethodModel>> methods)
+    // Resolves the compilation-dependent registrations into an equatable model. This runs on every
+    // compilation change (required for correctness), but its equatable output lets the downstream
+    // source emission cache per file.
+    private static ResolvedRegistrations Resolve(
+        Compilation compilation,
+        OptionModel option,
+        ImmutableArray<Result<MethodModel>> methods,
+        CancellationToken token)
     {
-        foreach (var info in methods.SelectError())
-        {
-            context.ReportDiagnostic(info);
-        }
-
         var parts = option.IgnoreInterface.Split([','], StringSplitOptions.RemoveEmptyEntries);
         var ignoreInterfaces = new string[parts.Length + IgnoreInterfaces.Length];
         parts.CopyTo(ignoreInterfaces, 0);
         IgnoreInterfaces.CopyTo(ignoreInterfaces, parts.Length);
 
-        var builder = new SourceBuilder();
+        var groups = ImmutableArray.CreateBuilder<ClassRegistrationModel>();
+        var diagnostics = ImmutableArray.CreateBuilder<DiagnosticInfo>();
+
         foreach (var group in methods.SelectValue().GroupBy(static x => new { x.Namespace, x.ClassName }))
         {
-            context.CancellationToken.ThrowIfCancellationRequested();
+            token.ThrowIfCancellationRequested();
 
-            builder.Clear();
-            BuildSource(context, builder, compilation, ignoreInterfaces, group.ToList());
+            var groupMethods = group.ToList();
+            var methodModels = ImmutableArray.CreateBuilder<MethodRegistrationModel>();
 
-            var filename = MakeFilename(group.Key.Namespace, group.Key.ClassName);
-            var source = builder.ToString();
-            context.AddSource(filename, SourceText.From(source, Encoding.UTF8));
-        }
-    }
-
-    private static void BuildSource(SourceProductionContext context, SourceBuilder builder, Compilation compilation, string[] ignoreInterfaces, List<MethodModel> methods)
-    {
-        var ns = methods[0].Namespace;
-        var className = methods[0].ClassName;
-        var isValueType = methods[0].IsValueType;
-
-        builder.AutoGenerated();
-        builder.EnableNullable();
-        builder.NewLine();
-
-        // namespace
-        if (!String.IsNullOrEmpty(ns))
-        {
-            builder.Namespace(ns);
-            builder.NewLine();
-        }
-
-        // using
-        builder.Using("Microsoft.Extensions.DependencyInjection");
-        builder.NewLine();
-
-        // class
-        builder
-            .Indent()
-            .Append("partial ")
-            .Append(isValueType ? "struct " : "class ")
-            .Append(className)
-            .NewLine();
-        builder.BeginScope();
-
-        var first = true;
-        foreach (var method in methods)
-        {
-            if (first)
+            foreach (var method in groupMethods)
             {
-                first = false;
-            }
-            else
-            {
-                builder.NewLine();
-            }
+                var registrations = ImmutableArray.CreateBuilder<RegistrationModel>();
 
-            // method
-            builder
-                .Indent()
-                .Append(method.MethodAccessibility.ToText())
-                .Append(" static partial global::")
-                .Append(ServiceCollectionName)
-                .Append(' ')
-                .Append(method.MethodName)
-                .Append("(this global::")
-                .Append(ServiceCollectionName)
-                .Append(' ')
-                .Append(method.ParameterName)
-                .Append(')')
-                .NewLine();
-            builder.BeginScope();
-
-            foreach (var attribute in method.Attributes)
-            {
-                Regex regex;
-                try
+                foreach (var attribute in method.Attributes)
                 {
-                    regex = new Regex(attribute.Pattern);
-                }
-                catch (ArgumentException)
-                {
-                    context.ReportDiagnostic(new DiagnosticInfo(Diagnostics.InvalidPattern, attribute.Location, attribute.Pattern));
-                    continue;
-                }
-
-                foreach (var namedTypeSymbol in ResolveClasses(compilation, attribute.Assembly))
-                {
-                    if (!String.IsNullOrEmpty(attribute.Namespace))
+                    Regex regex;
+                    try
                     {
-                        var symbolNamespace = namedTypeSymbol.ContainingNamespace.ToDisplayString();
-                        if ((symbolNamespace != attribute.Namespace) && !symbolNamespace.StartsWith(attribute.Namespace + ".", StringComparison.Ordinal))
-                        {
-                            continue;
-                        }
+                        regex = new Regex(attribute.Pattern);
                     }
-
-                    if (!regex.IsMatch(namedTypeSymbol.Name))
+                    catch (ArgumentException)
                     {
+                        diagnostics.Add(new DiagnosticInfo(Diagnostics.InvalidPattern, attribute.Location, attribute.Pattern));
                         continue;
                     }
 
-                    var interfaces = namedTypeSymbol.Interfaces
-                        .Where(x => !ignoreInterfaces.Contains(x.ToDisplayString()))
-                        .ToArray();
-                    if (interfaces.Length == 0)
+                    foreach (var namedTypeSymbol in ResolveClasses(compilation, attribute.Assembly))
                     {
-                        BuildRegistrationCall(builder, method.ParameterName, attribute.Lifetime, namedTypeSymbol);
-                    }
-                    else if (interfaces.Length == 1)
-                    {
-                        BuildRegistrationCall(builder, method.ParameterName, attribute.Lifetime, namedTypeSymbol, interfaces[0]);
-                    }
-                    else
-                    {
-                        BuildRegistrationCall(builder, method.ParameterName, attribute.Lifetime, namedTypeSymbol);
-                        foreach (var serviceAs in interfaces)
+                        if (!String.IsNullOrEmpty(attribute.Namespace))
                         {
-                            BuildRegistrationCallAsInterface(builder, method.ParameterName, attribute.Lifetime, namedTypeSymbol, serviceAs);
+                            var symbolNamespace = namedTypeSymbol.ContainingNamespace.ToDisplayString();
+                            if ((symbolNamespace != attribute.Namespace) && !symbolNamespace.StartsWith(attribute.Namespace + ".", StringComparison.Ordinal))
+                            {
+                                continue;
+                            }
                         }
+
+                        if (!regex.IsMatch(namedTypeSymbol.Name))
+                        {
+                            continue;
+                        }
+
+                        var interfaceNames = namedTypeSymbol.Interfaces
+                            .Where(x => !ignoreInterfaces.Contains(x.ToDisplayString()))
+                            .Select(static x => x.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat))
+                            .ToArray();
+
+                        registrations.Add(new RegistrationModel(
+                            namedTypeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                            new EquatableArray<string>(interfaceNames),
+                            attribute.Lifetime));
                     }
                 }
+
+                methodModels.Add(new MethodRegistrationModel(
+                    method.MethodAccessibility,
+                    method.MethodName,
+                    method.ParameterName,
+                    new EquatableArray<RegistrationModel>(registrations.ToArray())));
             }
 
-            builder
-                .Indent()
-                .Append("return ")
-                .Append(method.ParameterName)
-                .Append(';')
-                .NewLine();
-            builder.EndScope();
+            groups.Add(new ClassRegistrationModel(
+                group.Key.Namespace,
+                group.Key.ClassName,
+                groupMethods[0].IsValueType,
+                new EquatableArray<MethodRegistrationModel>(methodModels.ToArray())));
         }
 
-        builder.EndScope();
-    }
-
-    private static void BuildRegistrationCall(SourceBuilder builder, string parameter, int lifetime, INamedTypeSymbol service, INamedTypeSymbol? serviceAs = null)
-    {
-        builder
-            .Indent()
-            .Append(parameter)
-            .Append(".Add");
-        AddScope(builder, lifetime);
-        builder.Append('<');
-        if (serviceAs is not null)
-        {
-            builder
-                .Append(serviceAs.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)).Append(", ");
-        }
-        builder
-            .Append(service.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat))
-            .Append(">();")
-            .NewLine();
-    }
-
-    private static void BuildRegistrationCallAsInterface(SourceBuilder builder, string parameter, int lifetime, INamedTypeSymbol service, INamedTypeSymbol serviceAs)
-    {
-        builder.
-            Indent()
-            .Append(parameter)
-            .Append(".Add");
-        AddScope(builder, lifetime);
-        builder
-            .Append('<')
-            .Append(serviceAs.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat))
-            .Append(">(static x => x.GetRequiredService<")
-            .Append(service.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat))
-            .Append(">());")
-            .NewLine();
-    }
-
-    private static void AddScope(SourceBuilder builder, int lifetime)
-    {
-        builder.Append(lifetime switch
-        {
-            1 => "Singleton",
-            2 => "Scoped",
-            _ => "Transient"
-        });
+        return new ResolvedRegistrations(
+            new EquatableArray<ClassRegistrationModel>(groups.ToArray()),
+            new EquatableArray<DiagnosticInfo>(diagnostics.ToArray()));
     }
 
     private static IEnumerable<INamedTypeSymbol> ResolveClasses(Compilation compilation, string assembly)
@@ -373,6 +289,177 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
     }
 
     // ------------------------------------------------------------
+    // Diagnostics
+    // ------------------------------------------------------------
+
+    private static void ReportMethodDiagnostics(SourceProductionContext context, ImmutableArray<Result<MethodModel>> methods)
+    {
+        foreach (var info in methods.SelectError())
+        {
+            context.ReportDiagnostic(info);
+        }
+    }
+
+    private static void ReportResolveDiagnostics(SourceProductionContext context, ResolvedRegistrations resolved)
+    {
+        foreach (var info in resolved.Diagnostics)
+        {
+            context.ReportDiagnostic(info);
+        }
+    }
+
+    // ------------------------------------------------------------
+    // Generator
+    // ------------------------------------------------------------
+
+    private static void Execute(SourceProductionContext context, ClassRegistrationModel group)
+    {
+        context.CancellationToken.ThrowIfCancellationRequested();
+
+        var builder = new SourceBuilder();
+        BuildSource(builder, group);
+
+        var filename = MakeFilename(group.Namespace, group.ClassName);
+        context.AddSource(filename, SourceText.From(builder.ToString(), Encoding.UTF8));
+    }
+
+    private static void BuildSource(SourceBuilder builder, ClassRegistrationModel group)
+    {
+        var ns = group.Namespace;
+        var className = group.ClassName;
+        var isValueType = group.IsValueType;
+
+        builder.AutoGenerated();
+        builder.EnableNullable();
+        builder.NewLine();
+
+        // namespace
+        if (!String.IsNullOrEmpty(ns))
+        {
+            builder.Namespace(ns);
+            builder.NewLine();
+        }
+
+        // using
+        builder.Using("Microsoft.Extensions.DependencyInjection");
+        builder.NewLine();
+
+        // class
+        builder
+            .Indent()
+            .Append("partial ")
+            .Append(isValueType ? "struct " : "class ")
+            .Append(className)
+            .NewLine();
+        builder.BeginScope();
+
+        var first = true;
+        foreach (var method in group.Methods)
+        {
+            if (first)
+            {
+                first = false;
+            }
+            else
+            {
+                builder.NewLine();
+            }
+
+            // method
+            builder
+                .Indent()
+                .Append(method.MethodAccessibility.ToText())
+                .Append(" static partial global::")
+                .Append(ServiceCollectionName)
+                .Append(' ')
+                .Append(method.MethodName)
+                .Append("(this global::")
+                .Append(ServiceCollectionName)
+                .Append(' ')
+                .Append(method.ParameterName)
+                .Append(')')
+                .NewLine();
+            builder.BeginScope();
+
+            foreach (var registration in method.Registrations)
+            {
+                var interfaces = registration.InterfaceTypeNames.ToArray();
+                if (interfaces.Length == 0)
+                {
+                    BuildRegistrationCall(builder, method.ParameterName, registration.Lifetime, registration.ServiceTypeName);
+                }
+                else if (interfaces.Length == 1)
+                {
+                    BuildRegistrationCall(builder, method.ParameterName, registration.Lifetime, registration.ServiceTypeName, interfaces[0]);
+                }
+                else
+                {
+                    BuildRegistrationCall(builder, method.ParameterName, registration.Lifetime, registration.ServiceTypeName);
+                    foreach (var serviceAs in interfaces)
+                    {
+                        BuildRegistrationCallAsInterface(builder, method.ParameterName, registration.Lifetime, registration.ServiceTypeName, serviceAs);
+                    }
+                }
+            }
+
+            builder
+                .Indent()
+                .Append("return ")
+                .Append(method.ParameterName)
+                .Append(';')
+                .NewLine();
+            builder.EndScope();
+        }
+
+        builder.EndScope();
+    }
+
+    private static void BuildRegistrationCall(SourceBuilder builder, string parameter, int lifetime, string service, string? serviceAs = null)
+    {
+        builder
+            .Indent()
+            .Append(parameter)
+            .Append(".Add");
+        AddScope(builder, lifetime);
+        builder.Append('<');
+        if (serviceAs is not null)
+        {
+            builder
+                .Append(serviceAs).Append(", ");
+        }
+        builder
+            .Append(service)
+            .Append(">();")
+            .NewLine();
+    }
+
+    private static void BuildRegistrationCallAsInterface(SourceBuilder builder, string parameter, int lifetime, string service, string serviceAs)
+    {
+        builder.
+            Indent()
+            .Append(parameter)
+            .Append(".Add");
+        AddScope(builder, lifetime);
+        builder
+            .Append('<')
+            .Append(serviceAs)
+            .Append(">(static x => x.GetRequiredService<")
+            .Append(service)
+            .Append(">());")
+            .NewLine();
+    }
+
+    private static void AddScope(SourceBuilder builder, int lifetime)
+    {
+        builder.Append(lifetime switch
+        {
+            1 => "Singleton",
+            2 => "Scoped",
+            _ => "Transient"
+        });
+    }
+
+    // ------------------------------------------------------------
     // Helper
     // ------------------------------------------------------------
 
@@ -391,4 +478,29 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
 
         return buffer.ToString();
     }
+
+    // ------------------------------------------------------------
+    // Model
+    // ------------------------------------------------------------
+
+    private sealed record ResolvedRegistrations(
+        EquatableArray<ClassRegistrationModel> Groups,
+        EquatableArray<DiagnosticInfo> Diagnostics);
+
+    private sealed record ClassRegistrationModel(
+        string Namespace,
+        string ClassName,
+        bool IsValueType,
+        EquatableArray<MethodRegistrationModel> Methods);
+
+    private sealed record MethodRegistrationModel(
+        Accessibility MethodAccessibility,
+        string MethodName,
+        string ParameterName,
+        EquatableArray<RegistrationModel> Registrations);
+
+    private sealed record RegistrationModel(
+        string ServiceTypeName,
+        EquatableArray<string> InterfaceTypeNames,
+        int Lifetime);
 }
