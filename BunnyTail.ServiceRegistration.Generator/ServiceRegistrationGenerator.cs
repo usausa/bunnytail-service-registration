@@ -35,7 +35,7 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
     {
         var compilationProvider = context.CompilationProvider;
 
-        var valueProvider = context.AnalyzerConfigOptionsProvider
+        var optionProvider = context.AnalyzerConfigOptionsProvider
             .Select(static (provider, _) => SelectOption(provider));
 
         var propertyProvider = context.SyntaxProvider
@@ -45,18 +45,12 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
                 static (context, _) => GetMethodModel(context))
             .Collect();
 
-        // Method definition diagnostics depend only on the parsed methods, so report them separately.
         context.RegisterSourceOutput(
             propertyProvider,
             static (context, methods) => ReportMethodDiagnostics(context, methods));
 
-        // Symbol resolution stays driven by the CompilationProvider (required for correctness: the
-        // generated registrations depend on the whole compilation, and ForAttributeWithMetadataName
-        // transforms are not re-run when other files change). The resolution is collapsed into an
-        // equatable per-class model, so the actual source emission is skipped while the resolved
-        // registrations are unchanged, instead of regenerating every file on any compilation change.
         var resolvedProvider = compilationProvider
-            .Combine(valueProvider)
+            .Combine(optionProvider)
             .Combine(propertyProvider)
             .Select(static (provider, token) => Resolve(provider.Left.Left, provider.Left.Right, provider.Right, token));
 
@@ -64,10 +58,10 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
             resolvedProvider,
             static (context, resolved) => ReportResolveDiagnostics(context, resolved));
 
-        var groups = resolvedProvider.SelectMany(static (resolved, _) => resolved.Groups.ToImmutableArray());
+        var classProvider = resolvedProvider.SelectMany(static (resolved, _) => resolved.Classes.ToImmutableArray());
         context.RegisterImplementationSourceOutput(
-            groups,
-            static (context, group) => Execute(context, group));
+            classProvider,
+            static (context, classModel) => Execute(context, classModel));
     }
 
     // ------------------------------------------------------------
@@ -173,36 +167,35 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
     // Resolver
     // ------------------------------------------------------------
 
-    // Resolves the compilation-dependent registrations into an equatable model. This runs on every
-    // compilation change (required for correctness), but its equatable output lets the downstream
-    // source emission cache per file.
-    private static ResolvedRegistrations Resolve(
+    private static ResolvedRegistrationModel Resolve(
         Compilation compilation,
         OptionModel option,
         ImmutableArray<Result<MethodModel>> methods,
         CancellationToken token)
     {
+        // Combine ignore interfaces
         var parts = option.IgnoreInterface.Split([','], StringSplitOptions.RemoveEmptyEntries);
         var ignoreInterfaces = new string[parts.Length + IgnoreInterfaces.Length];
         parts.CopyTo(ignoreInterfaces, 0);
         IgnoreInterfaces.CopyTo(ignoreInterfaces, parts.Length);
 
-        var groups = ImmutableArray.CreateBuilder<ClassRegistrationModel>();
+        var classes = ImmutableArray.CreateBuilder<ClassModel>();
         var diagnostics = ImmutableArray.CreateBuilder<DiagnosticInfo>();
 
+        // Group by class
         foreach (var group in methods.SelectValue().GroupBy(static x => new { x.Namespace, x.ClassName }))
         {
             token.ThrowIfCancellationRequested();
 
             var groupMethods = group.ToList();
-            var methodModels = ImmutableArray.CreateBuilder<MethodRegistrationModel>();
+            var methodRegistrations = ImmutableArray.CreateBuilder<MethodRegistrationModel>();
 
             foreach (var method in groupMethods)
             {
                 var registrations = ImmutableArray.CreateBuilder<RegistrationModel>();
-
                 foreach (var attribute in method.Attributes)
                 {
+                    // Compile class name pattern
                     Regex regex;
                     try
                     {
@@ -216,6 +209,7 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
 
                     foreach (var namedTypeSymbol in ResolveClasses(compilation, attribute.Assembly))
                     {
+                        // Filter by namespace
                         if (!String.IsNullOrEmpty(attribute.Namespace))
                         {
                             var symbolNamespace = namedTypeSymbol.ContainingNamespace.ToDisplayString();
@@ -225,16 +219,17 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
                             }
                         }
 
+                        // Filter by class name
                         if (!regex.IsMatch(namedTypeSymbol.Name))
                         {
                             continue;
                         }
 
+                        // Select interfaces
                         var interfaceNames = namedTypeSymbol.Interfaces
                             .Where(x => !ignoreInterfaces.Contains(x.ToDisplayString()))
                             .Select(static x => x.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat))
                             .ToArray();
-
                         registrations.Add(new RegistrationModel(
                             namedTypeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
                             new EquatableArray<string>(interfaceNames),
@@ -242,22 +237,24 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
                     }
                 }
 
-                methodModels.Add(new MethodRegistrationModel(
+                // Build method registration model
+                methodRegistrations.Add(new MethodRegistrationModel(
                     method.MethodAccessibility,
                     method.MethodName,
                     method.ParameterName,
                     new EquatableArray<RegistrationModel>(registrations.ToArray())));
             }
 
-            groups.Add(new ClassRegistrationModel(
+            // Build class registration model
+            classes.Add(new ClassModel(
                 group.Key.Namespace,
                 group.Key.ClassName,
                 groupMethods[0].IsValueType,
-                new EquatableArray<MethodRegistrationModel>(methodModels.ToArray())));
+                new EquatableArray<MethodRegistrationModel>(methodRegistrations.ToArray())));
         }
 
-        return new ResolvedRegistrations(
-            new EquatableArray<ClassRegistrationModel>(groups.ToArray()),
+        return new ResolvedRegistrationModel(
+            new EquatableArray<ClassModel>(classes.ToArray()),
             new EquatableArray<DiagnosticInfo>(diagnostics.ToArray()));
     }
 
@@ -268,18 +265,21 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
             return compilation.Assembly.GlobalNamespace.GetTypeMembersRecursive(ClassFilter);
         }
 
+        // Scan referenced assembly
         foreach (var reference in compilation.References)
         {
             if ((compilation.GetAssemblyOrModuleSymbol(reference) is IAssemblySymbol assemblySymbol) &&
                 String.Equals(assemblySymbol.Identity.Name, assembly, StringComparison.Ordinal))
             {
-                return assemblySymbol.GlobalNamespace.GetTypeMembersRecursive(ClassFilter)
+                return assemblySymbol.GlobalNamespace
+                    .GetTypeMembersRecursive(ClassFilter)
                     .Where(x => compilation.IsSymbolAccessibleWithin(x, compilation.Assembly));
             }
         }
 
         return [];
 
+        // Accept only classes
         static bool ClassFilter(INamedTypeSymbol symbol) =>
             (symbol.TypeKind == TypeKind.Class) &&
             !symbol.IsStatic &&
@@ -300,7 +300,7 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
         }
     }
 
-    private static void ReportResolveDiagnostics(SourceProductionContext context, ResolvedRegistrations resolved)
+    private static void ReportResolveDiagnostics(SourceProductionContext context, ResolvedRegistrationModel resolved)
     {
         foreach (var info in resolved.Diagnostics)
         {
@@ -312,22 +312,22 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
     // Generator
     // ------------------------------------------------------------
 
-    private static void Execute(SourceProductionContext context, ClassRegistrationModel group)
+    private static void Execute(SourceProductionContext context, ClassModel classModel)
     {
         context.CancellationToken.ThrowIfCancellationRequested();
 
         var builder = new SourceBuilder();
-        BuildSource(builder, group);
+        BuildSource(builder, classModel);
 
-        var filename = MakeFilename(group.Namespace, group.ClassName);
+        var filename = MakeFilename(classModel.Namespace, classModel.ClassName);
         context.AddSource(filename, SourceText.From(builder.ToString(), Encoding.UTF8));
     }
 
-    private static void BuildSource(SourceBuilder builder, ClassRegistrationModel group)
+    private static void BuildSource(SourceBuilder builder, ClassModel classModel)
     {
-        var ns = group.Namespace;
-        var className = group.ClassName;
-        var isValueType = group.IsValueType;
+        var ns = classModel.Namespace;
+        var className = classModel.ClassName;
+        var isValueType = classModel.IsValueType;
 
         builder.AutoGenerated();
         builder.EnableNullable();
@@ -354,7 +354,7 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
         builder.BeginScope();
 
         var first = true;
-        foreach (var method in group.Methods)
+        foreach (var method in classModel.Methods)
         {
             if (first)
             {
@@ -478,29 +478,4 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
 
         return buffer.ToString();
     }
-
-    // ------------------------------------------------------------
-    // Model
-    // ------------------------------------------------------------
-
-    private sealed record ResolvedRegistrations(
-        EquatableArray<ClassRegistrationModel> Groups,
-        EquatableArray<DiagnosticInfo> Diagnostics);
-
-    private sealed record ClassRegistrationModel(
-        string Namespace,
-        string ClassName,
-        bool IsValueType,
-        EquatableArray<MethodRegistrationModel> Methods);
-
-    private sealed record MethodRegistrationModel(
-        Accessibility MethodAccessibility,
-        string MethodName,
-        string ParameterName,
-        EquatableArray<RegistrationModel> Registrations);
-
-    private sealed record RegistrationModel(
-        string ServiceTypeName,
-        EquatableArray<string> InterfaceTypeNames,
-        int Lifetime);
 }
