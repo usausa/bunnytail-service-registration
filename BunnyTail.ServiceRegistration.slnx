@@ -1,7 +1,7 @@
 <Solution>
   <Folder Name="/Example/">
     <Project Path="Develop.Library/Develop.Library.csproj" />
-    <Project Path="Develop/Develop.csproj" />
+    <Project Path="Develop/Develop.csproj" DefaultStartup="true" />
   </Folder>
   <Folder Name="/Library/">
     <Project Path="BunnyTail.ServiceRegistration.Generator/BunnyTail.ServiceRegistration.Generator.csproj" />
