@@ -2,7 +2,6 @@ namespace BunnyTail.ServiceRegistration.Generator;
 
 using System;
 using System.Collections.Immutable;
-using System.Text;
 using System.Text.RegularExpressions;
 
 using BunnyTail.ServiceRegistration.Generator.Models;
@@ -10,7 +9,6 @@ using BunnyTail.ServiceRegistration.Generator.Models;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Diagnostics;
-using Microsoft.CodeAnalysis.Text;
 
 using SourceGenerateHelper;
 
@@ -333,8 +331,7 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
         var builder = new SourceBuilder();
         BuildSource(builder, classModel);
 
-        var filename = MakeFilename(classModel.Namespace, classModel.ClassName);
-        context.AddSource(filename, SourceText.From(builder.ToString(), Encoding.UTF8));
+        context.AddSource(HintNameBuilder.Build(classModel.Namespace, classModel.ClassName), builder);
     }
 
     private static void BuildSource(SourceBuilder builder, ClassModel classModel)
@@ -471,25 +468,5 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
             2 => "Scoped",
             _ => "Transient"
         });
-    }
-
-    // ------------------------------------------------------------
-    // Helper
-    // ------------------------------------------------------------
-
-    private static string MakeFilename(string ns, string className)
-    {
-        var buffer = new StringBuilder();
-
-        if (!String.IsNullOrEmpty(ns))
-        {
-            buffer.Append(ns.Replace('.', '_'));
-            buffer.Append('_');
-        }
-
-        buffer.Append(className.Replace('<', '[').Replace('>', ']'));
-        buffer.Append(".g.cs");
-
-        return buffer.ToString();
     }
 }
