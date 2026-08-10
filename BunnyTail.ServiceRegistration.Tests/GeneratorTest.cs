@@ -2,7 +2,6 @@ namespace BunnyTail.ServiceRegistration;
 
 using Develop.Library;
 
-using Microsoft.CodeAnalysis;
 using Microsoft.Extensions.DependencyInjection;
 
 public class GeneratorTest
