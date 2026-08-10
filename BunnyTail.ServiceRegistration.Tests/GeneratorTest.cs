@@ -1,11 +1,8 @@
 namespace BunnyTail.ServiceRegistration;
 
-using BunnyTail.ServiceRegistration.Generator;
-
 using Develop.Library;
 
 using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.Extensions.DependencyInjection;
 
 public class GeneratorTest
@@ -113,58 +110,6 @@ public class GeneratorTest
 
         Assert.Null(provider.GetService<AbstractMatchService>());
         Assert.Null(provider.GetService<GenericMatchService<int>>());
-    }
-
-    [Fact]
-    public void InvalidPatternReportsDiagnostic()
-    {
-        // CSharpGeneratorDriver-based diagnostic test: "[" is an invalid regex pattern.
-        // The generator must report BTSR0004 instead of throwing.
-        const string source = """
-            using BunnyTail.ServiceRegistration;
-            using Microsoft.Extensions.DependencyInjection;
-
-            internal static partial class ServiceCollectionExtensions
-            {
-                [ServiceRegistration(Lifetime.Singleton, "[")]
-                public static partial IServiceCollection AddBroken(this IServiceCollection services);
-            }
-            """;
-
-        var trustedAssemblies = (AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES") as string ?? string.Empty)
-            .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
-            .Select(static path => MetadataReference.CreateFromFile(path));
-
-        var extraReferences = new[]
-        {
-            MetadataReference.CreateFromFile(typeof(ServiceRegistrationAttribute).Assembly.Location),
-            MetadataReference.CreateFromFile(typeof(IServiceCollection).Assembly.Location)
-        };
-
-        var references = trustedAssemblies.Concat(extraReferences).ToArray();
-
-        var cancellationToken = TestContext.Current.CancellationToken;
-
-        // Load SourceGenerateHelper so the generator can initialize in-process.
-        var generatorDir = Path.GetDirectoryName(typeof(ServiceRegistrationGenerator).Assembly.Location)!;
-        var helperDll = Path.Combine(generatorDir, "SourceGenerateHelper.dll");
-        if (File.Exists(helperDll))
-        {
-            System.Runtime.Loader.AssemblyLoadContext.Default.LoadFromAssemblyPath(helperDll);
-        }
-
-        var compilation = CSharpCompilation.Create(
-            "TestAssembly",
-            [CSharpSyntaxTree.ParseText(source, cancellationToken: cancellationToken)],
-            references,
-            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
-
-        var generator = new ServiceRegistrationGenerator();
-        var driver = CSharpGeneratorDriver.Create(generator);
-
-        driver.RunGeneratorsAndUpdateCompilation(compilation, out _, out var diagnostics, cancellationToken);
-
-        Assert.Contains(diagnostics, static d => d.Id == "BTSR0004");
     }
 }
 

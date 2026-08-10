@@ -9,7 +9,7 @@ internal static class Diagnostics
         title: "Invalid method definition",
         messageFormat: "Method must be partial extension. method=[{0}]",
         category: "Usage",
-        defaultSeverity: DiagnosticSeverity.Warning,
+        defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);
 
     public static DiagnosticDescriptor InvalidMethodParameter { get; } = new(
@@ -17,7 +17,7 @@ internal static class Diagnostics
         title: "Invalid method parameter",
         messageFormat: "Parameter type must be IServiceCollection. method=[{0}]",
         category: "Usage",
-        defaultSeverity: DiagnosticSeverity.Warning,
+        defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);
 
     public static DiagnosticDescriptor InvalidMethodReturnType { get; } = new(
@@ -25,7 +25,7 @@ internal static class Diagnostics
         title: "Invalid method return type",
         messageFormat: "Return type must be IServiceCollection. method=[{0}]",
         category: "Usage",
-        defaultSeverity: DiagnosticSeverity.Warning,
+        defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);
 
     public static DiagnosticDescriptor InvalidPattern { get; } = new(
