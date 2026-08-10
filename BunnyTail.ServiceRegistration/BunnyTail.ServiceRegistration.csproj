@@ -32,10 +32,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Build order only. PackBuildOutputs reads the generator's bin directory directly, so packing
-         this project on its own fails unless the generator happened to be built first. This makes
-         the ordering explicit. ReferenceOutputAssembly keeps the generator off this project's
-         compile references, PrivateAssets keeps it out of the package dependencies. -->
     <ProjectReference Include="..\BunnyTail.ServiceRegistration.Generator\BunnyTail.ServiceRegistration.Generator.csproj" ReferenceOutputAssembly="false" PrivateAssets="all" />
   </ItemGroup>
 

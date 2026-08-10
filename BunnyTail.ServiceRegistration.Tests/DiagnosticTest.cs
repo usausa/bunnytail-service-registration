@@ -1,10 +1,5 @@
 namespace BunnyTail.ServiceRegistration;
 
-using Microsoft.CodeAnalysis;
-
-// Diagnostic coverage for ServiceRegistrationGenerator.
-// GeneratorTest builds a real ServiceProvider and therefore only reaches inputs the generator
-// accepts; these cover the refusals.
 public class DiagnosticTest
 {
     private const string Head =
@@ -15,7 +10,7 @@ public class DiagnosticTest
         """;
 
     //-----------------------------------------------------------------------
-    // BTSR0001 : method must be a static partial extension method
+    // BTSR
     //-----------------------------------------------------------------------
 
     [Fact]
@@ -33,10 +28,6 @@ public class DiagnosticTest
         Assert.Contains(diagnostics, static x => x.Id == "BTSR0001");
     }
 
-    //-----------------------------------------------------------------------
-    // BTSR0002 : parameter list must be the extension receiver only
-    //-----------------------------------------------------------------------
-
     [Fact]
     public void Btsr0002ExtraParameterEmitsDiagnostic()
     {
@@ -52,10 +43,6 @@ public class DiagnosticTest
         Assert.Contains(diagnostics, static x => x.Id == "BTSR0002");
     }
 
-    //-----------------------------------------------------------------------
-    // BTSR0003 : return type must be IServiceCollection
-    //-----------------------------------------------------------------------
-
     [Fact]
     public void Btsr0003InvalidReturnTypeEmitsDiagnostic()
     {
@@ -70,10 +57,6 @@ public class DiagnosticTest
 
         Assert.Contains(diagnostics, static x => x.Id == "BTSR0003");
     }
-
-    //-----------------------------------------------------------------------
-    // BTSR0004 : the pattern must be a valid regular expression
-    //-----------------------------------------------------------------------
 
     [Fact]
     public void Btsr0004InvalidPatternEmitsDiagnostic()
@@ -91,7 +74,7 @@ public class DiagnosticTest
     }
 
     //-----------------------------------------------------------------------
-    // Valid input must stay clean
+    // Valid
     //-----------------------------------------------------------------------
 
     [Fact]

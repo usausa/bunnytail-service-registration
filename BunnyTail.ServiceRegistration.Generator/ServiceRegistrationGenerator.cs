@@ -47,21 +47,14 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
             propertyProvider,
             static (context, methods) => ReportMethodDiagnostics(context, methods));
 
-        // CompilationProvider changes on every keystroke, so Resolve re-runs on each edit; the
-        // whole-assembly scan is inherent to the feature. What keeps regeneration minimal is that
-        // Resolve returns an equatable model (ResolvedRegistrationModel and every nested model are
-        // records over EquatableArray): when an edit does not change the resolved registrations, the
-        // downstream nodes see equal values and neither the diagnostics nor Execute re-run.
         var resolvedProvider = compilationProvider
             .Combine(optionProvider)
             .Combine(propertyProvider)
             .Select(static (provider, token) => Resolve(provider.Left.Left, provider.Left.Right, provider.Right, token));
 
-        // Project diagnostics and classes into separate equatable providers so that a change to one
-        // (e.g. a class body that alters generated source) does not force the other to re-run.
         var resolveDiagnosticProvider = resolvedProvider
             .Select(static (resolved, _) => resolved.Diagnostics)
-            .WithTrackingName("ResolveDiagnostics");
+            .WithTrackingName("Diagnostics");
         context.RegisterSourceOutput(
             resolveDiagnosticProvider,
             static (context, diagnostics) => ReportResolveDiagnostics(context, diagnostics));
@@ -205,9 +198,7 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
                 var registrations = ImmutableArray.CreateBuilder<RegistrationModel>();
                 foreach (var attribute in method.Attributes)
                 {
-                    // Compile class name pattern. An invalid pattern would otherwise crash the
-                    // whole generator; RegexParseException derives from ArgumentException, so both
-                    // the parse failure and a bad option are turned into a diagnostic instead.
+                    // Compile class name pattern
                     Regex regex;
                     try
                     {
