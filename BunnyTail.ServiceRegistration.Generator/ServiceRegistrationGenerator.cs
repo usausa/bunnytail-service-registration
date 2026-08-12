@@ -7,6 +7,7 @@ using System.Text.RegularExpressions;
 using BunnyTail.ServiceRegistration.Generator.Models;
 
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Diagnostics;
 
@@ -18,6 +19,9 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
     private const string AttributeName = "BunnyTail.ServiceRegistration.ServiceRegistrationAttribute";
 
     private const string ServiceCollectionName = "Microsoft.Extensions.DependencyInjection.IServiceCollection";
+
+    private const string ResolveReferencedAssemblyProperty = "build_property.ServiceRegistrationResolveReferencedAssembly";
+    private const string IgnoreInterfaceProperty = "build_property.ServiceRegistrationIgnoreInterface";
 
     private static readonly string[] IgnoreInterfaces =
     [
@@ -31,8 +35,6 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
-        var compilationProvider = context.CompilationProvider;
-
         var optionProvider = context.AnalyzerConfigOptionsProvider
             .Select(static (provider, _) => SelectOption(provider));
 
@@ -47,10 +49,26 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
             propertyProvider,
             static (context, methods) => ReportMethodDiagnostics(context, methods));
 
-        var resolvedProvider = compilationProvider
+        var candidateProvider = context.SyntaxProvider
+            .CreateSyntaxProvider(
+                static (syntax, _) => IsCandidateSyntax(syntax),
+                static (context, token) => GetCandidateModel(context, token))
+            .Where(static x => x is not null)
+            .Select(static (x, _) => x!)
+            .Collect()
+            .WithTrackingName("Candidates");
+
+        var referenceProvider = context.CompilationProvider
             .Combine(optionProvider)
             .Combine(propertyProvider)
-            .Select(static (provider, token) => Resolve(provider.Left.Left, provider.Left.Right, provider.Right, token));
+            .Select(static (provider, token) => SelectReferenceCandidates(provider.Left.Left, provider.Left.Right, provider.Right, token))
+            .WithTrackingName("References");
+
+        var resolvedProvider = propertyProvider
+            .Combine(optionProvider)
+            .Combine(candidateProvider)
+            .Combine(referenceProvider)
+            .Select(static (provider, token) => Resolve(provider.Left.Left.Left, provider.Left.Left.Right, provider.Left.Right, provider.Right, token));
 
         var resolveDiagnosticProvider = resolvedProvider
             .Select(static (resolved, _) => resolved.Diagnostics)
@@ -73,8 +91,11 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
 
     private static OptionModel SelectOption(AnalyzerConfigOptionsProvider provider)
     {
-        var value = provider.GlobalOptions.TryGetValue("build_property.ServiceRegistrationIgnoreInterface", out var result) ? result : string.Empty;
-        return new OptionModel(value);
+        var resolveReferencedAssembly = provider.GlobalOptions.TryGetValue(ResolveReferencedAssemblyProperty, out var value) &&
+            Boolean.TryParse(value, out var result) &&
+            result;
+        var ignoreInterface = provider.GlobalOptions.TryGetValue(IgnoreInterfaceProperty, out value) ? value : string.Empty;
+        return new OptionModel(resolveReferencedAssembly, ignoreInterface);
     }
 
     private static bool IsTargetSyntax(SyntaxNode syntax) =>
@@ -166,14 +187,107 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
         return list.ToArray();
     }
 
+    private static bool IsCandidateSyntax(SyntaxNode syntax) =>
+        (syntax is ClassDeclarationSyntax classSyntax) &&
+        (classSyntax.TypeParameterList is null) &&
+        !classSyntax.Modifiers.Any(SyntaxKind.StaticKeyword) &&
+        !classSyntax.Modifiers.Any(SyntaxKind.AbstractKeyword);
+
+    private static CandidateClassModel? GetCandidateModel(GeneratorSyntaxContext context, CancellationToken token)
+    {
+        var syntax = (ClassDeclarationSyntax)context.Node;
+        if ((context.SemanticModel.GetDeclaredSymbol(syntax, token) is not { } symbol) || !ClassFilter(symbol))
+        {
+            return null;
+        }
+
+        var references = symbol.DeclaringSyntaxReferences;
+        if ((references.Length > 1) &&
+            ((references[0].SyntaxTree != syntax.SyntaxTree) || (references[0].Span != syntax.Span)))
+        {
+            return null;
+        }
+
+        return CreateCandidateModel(symbol);
+    }
+
+    private static CandidateClassModel CreateCandidateModel(INamedTypeSymbol symbol)
+    {
+        var interfaces = symbol.Interfaces
+            .Select(static x => new InterfaceModel(x.ToDisplayString(), x.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)))
+            .ToArray();
+        return new CandidateClassModel(
+            symbol.ContainingNamespace.ToDisplayString(),
+            symbol.Name,
+            symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+            new EquatableArray<InterfaceModel>(interfaces));
+    }
+
+    private static bool ClassFilter(INamedTypeSymbol symbol) =>
+        (symbol.TypeKind == TypeKind.Class) &&
+        !symbol.IsStatic &&
+        !symbol.IsAbstract &&
+        !symbol.IsGenericType &&
+        !symbol.IsFileLocal;
+
     // ------------------------------------------------------------
     // Resolver
     // ------------------------------------------------------------
 
-    private static ResolvedRegistrationModel Resolve(
+    private static EquatableArray<ReferenceAssemblyModel> SelectReferenceCandidates(
         Compilation compilation,
         OptionModel option,
         ImmutableArray<Result<MethodModel>> methods,
+        CancellationToken token)
+    {
+        if (!option.ResolveReferencedAssembly)
+        {
+            return new EquatableArray<ReferenceAssemblyModel>([]);
+        }
+
+        // Collect assembly names specified by attributes
+        var assemblyNames = new List<string>();
+        foreach (var method in methods.SelectValue())
+        {
+            foreach (var attribute in method.Attributes)
+            {
+                if (!String.IsNullOrEmpty(attribute.Assembly) && !assemblyNames.Contains(attribute.Assembly))
+                {
+                    assemblyNames.Add(attribute.Assembly);
+                }
+            }
+        }
+
+        if (assemblyNames.Count == 0)
+        {
+            return new EquatableArray<ReferenceAssemblyModel>([]);
+        }
+
+        var list = new List<ReferenceAssemblyModel>();
+        foreach (var reference in compilation.References)
+        {
+            token.ThrowIfCancellationRequested();
+
+            if ((compilation.GetAssemblyOrModuleSymbol(reference) is IAssemblySymbol assemblySymbol) &&
+                assemblyNames.Contains(assemblySymbol.Identity.Name))
+            {
+                var candidates = assemblySymbol.GlobalNamespace
+                    .GetTypeMembersRecursive(ClassFilter)
+                    .Where(x => compilation.IsSymbolAccessibleWithin(x, compilation.Assembly))
+                    .Select(CreateCandidateModel)
+                    .ToArray();
+                list.Add(new ReferenceAssemblyModel(assemblySymbol.Identity.Name, new EquatableArray<CandidateClassModel>(candidates)));
+            }
+        }
+
+        return new EquatableArray<ReferenceAssemblyModel>(list.ToArray());
+    }
+
+    private static ResolvedRegistrationModel Resolve(
+        ImmutableArray<Result<MethodModel>> methods,
+        OptionModel option,
+        ImmutableArray<CandidateClassModel> candidates,
+        EquatableArray<ReferenceAssemblyModel> references,
         CancellationToken token)
     {
         // Combine ignore interfaces
@@ -210,31 +324,47 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
                         continue;
                     }
 
-                    foreach (var namedTypeSymbol in ResolveClasses(compilation, attribute.Assembly))
+                    // Select candidate source
+                    IEnumerable<CandidateClassModel> targets;
+                    if (String.IsNullOrEmpty(attribute.Assembly))
+                    {
+                        targets = candidates;
+                    }
+                    else if (!option.ResolveReferencedAssembly)
+                    {
+                        diagnostics.Add(new DiagnosticInfo(Diagnostics.ReferencedAssemblyDisabled, attribute.Location, attribute.Assembly));
+                        continue;
+                    }
+                    else
+                    {
+                        targets = FindReferenceCandidates(references, attribute.Assembly);
+                    }
+
+                    foreach (var candidate in targets)
                     {
                         // Filter by namespace
                         if (!String.IsNullOrEmpty(attribute.Namespace))
                         {
-                            var symbolNamespace = namedTypeSymbol.ContainingNamespace.ToDisplayString();
-                            if ((symbolNamespace != attribute.Namespace) && !symbolNamespace.StartsWith(attribute.Namespace + ".", StringComparison.Ordinal))
+                            var candidateNamespace = candidate.Namespace;
+                            if ((candidateNamespace != attribute.Namespace) && !candidateNamespace.StartsWith(attribute.Namespace + ".", StringComparison.Ordinal))
                             {
                                 continue;
                             }
                         }
 
                         // Filter by class name
-                        if (!regex.IsMatch(namedTypeSymbol.Name))
+                        if (!regex.IsMatch(candidate.Name))
                         {
                             continue;
                         }
 
                         // Select interfaces
-                        var interfaceNames = namedTypeSymbol.Interfaces
-                            .Where(x => !ignoreInterfaces.Contains(x.ToDisplayString()))
-                            .Select(static x => x.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat))
+                        var interfaceNames = candidate.Interfaces
+                            .Where(x => !ignoreInterfaces.Contains(x.DisplayName))
+                            .Select(static x => x.FullyQualifiedName)
                             .ToArray();
                         registrations.Add(new RegistrationModel(
-                            namedTypeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                            candidate.FullyQualifiedName,
                             new EquatableArray<string>(interfaceNames),
                             attribute.Lifetime));
                     }
@@ -261,34 +391,17 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
             new EquatableArray<DiagnosticInfo>(diagnostics.ToArray()));
     }
 
-    private static IEnumerable<INamedTypeSymbol> ResolveClasses(Compilation compilation, string assembly)
+    private static EquatableArray<CandidateClassModel> FindReferenceCandidates(EquatableArray<ReferenceAssemblyModel> references, string assembly)
     {
-        if (String.IsNullOrEmpty(assembly))
+        foreach (var reference in references)
         {
-            return compilation.Assembly.GlobalNamespace.GetTypeMembersRecursive(ClassFilter);
-        }
-
-        // Scan referenced assembly
-        foreach (var reference in compilation.References)
-        {
-            if ((compilation.GetAssemblyOrModuleSymbol(reference) is IAssemblySymbol assemblySymbol) &&
-                String.Equals(assemblySymbol.Identity.Name, assembly, StringComparison.Ordinal))
+            if (String.Equals(reference.AssemblyName, assembly, StringComparison.Ordinal))
             {
-                return assemblySymbol.GlobalNamespace
-                    .GetTypeMembersRecursive(ClassFilter)
-                    .Where(x => compilation.IsSymbolAccessibleWithin(x, compilation.Assembly));
+                return reference.Classes;
             }
         }
 
-        return [];
-
-        // Accept only classes
-        static bool ClassFilter(INamedTypeSymbol symbol) =>
-            (symbol.TypeKind == TypeKind.Class) &&
-            !symbol.IsStatic &&
-            !symbol.IsAbstract &&
-            !symbol.IsGenericType &&
-            !symbol.IsFileLocal;
+        return new EquatableArray<CandidateClassModel>([]);
     }
 
     // ------------------------------------------------------------

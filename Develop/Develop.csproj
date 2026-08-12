@@ -13,6 +13,7 @@
   </PropertyGroup>
 
   <PropertyGroup>
+    <ServiceRegistrationResolveReferencedAssembly>true</ServiceRegistrationResolveReferencedAssembly>
     <ServiceRegistrationIgnoreInterface>Develop.INavigation</ServiceRegistrationIgnoreInterface>
   </PropertyGroup>
 

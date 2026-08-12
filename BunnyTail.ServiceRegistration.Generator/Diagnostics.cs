@@ -35,4 +35,12 @@ internal static class Diagnostics
         category: "Usage",
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
+
+    public static DiagnosticDescriptor ReferencedAssemblyDisabled { get; } = new(
+        id: "BTSR0005",
+        title: "Referenced assembly resolution disabled",
+        messageFormat: "Referenced assembly is not searched. Set ServiceRegistrationResolveReferencedAssembly to true. assembly=[{0}]",
+        category: "Usage",
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
 }

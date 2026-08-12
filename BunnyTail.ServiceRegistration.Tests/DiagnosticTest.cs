@@ -73,9 +73,56 @@ public class DiagnosticTest
         Assert.Contains(diagnostics, static x => x.Id == "BTSR0004");
     }
 
+    [Fact]
+    public void Btsr0005AssemblyWithoutResolveOptionEmitsDiagnostic()
+    {
+        var diagnostics = GeneratorTestHelper.GetDiagnostics(Head +
+            """
+            internal static partial class ServiceCollectionExtensions
+            {
+                [ServiceRegistration(Lifetime.Singleton, "Service$", Assembly = "Develop.Library")]
+                public static partial IServiceCollection AddServices(this IServiceCollection services);
+            }
+            """);
+
+        Assert.Contains(diagnostics, static x => x.Id == "BTSR0005");
+    }
+
     //-----------------------------------------------------------------------
     // Valid
     //-----------------------------------------------------------------------
+
+    [Fact]
+    public void AssemblyWithResolveOptionEmitsNoDiagnostic()
+    {
+        var diagnostics = GeneratorTestHelper.GetDiagnosticsWithReference(Head +
+            """
+            internal static partial class ServiceCollectionExtensions
+            {
+                [ServiceRegistration(Lifetime.Singleton, "Service$", Assembly = "Develop.Library")]
+                public static partial IServiceCollection AddServices(this IServiceCollection services);
+            }
+            """);
+
+        Assert.Empty(diagnostics);
+    }
+
+    [Fact]
+    public void AssemblyWithResolveOptionGeneratesReferenceRegistrations()
+    {
+        var generated = GeneratorTestHelper.GetGeneratedSourceWithReference(Head +
+            """
+            internal static partial class ServiceCollectionExtensions
+            {
+                [ServiceRegistration(Lifetime.Singleton, "Service$", Assembly = "Develop.Library")]
+                public static partial IServiceCollection AddServices(this IServiceCollection services);
+            }
+            """);
+
+        Assert.Contains("global::Develop.Library.FooService", generated, StringComparison.Ordinal);
+        Assert.Contains("global::Develop.Library.IBarService", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain("InternalLibraryService", generated, StringComparison.Ordinal);
+    }
 
     [Fact]
     public void ValidRegistrationEmitsNoDiagnostic()

@@ -17,9 +17,17 @@ internal static class GeneratorTestHelper
         .WithReference(typeof(IServiceCollection).Assembly)
         .WithDiagnosticPrefix("BTSR");
 
+    private static GeneratorTestRunner ReferenceRunner => Runner
+        .WithReference(typeof(Develop.Library.FooService).Assembly)
+        .WithGlobalOption("build_property.ServiceRegistrationResolveReferencedAssembly", "true");
+
     public static IReadOnlyList<Diagnostic> GetDiagnostics(string source) => Runner.GetDiagnostics(source);
 
     public static IReadOnlyList<Diagnostic> GetDiagnosticsAll(string source) => Runner.GetDiagnosticsAll(source);
 
     public static string GetGeneratedSource(string source) => Runner.GetGeneratedSource(source);
+
+    public static IReadOnlyList<Diagnostic> GetDiagnosticsWithReference(string source) => ReferenceRunner.GetDiagnostics(source);
+
+    public static string GetGeneratedSourceWithReference(string source) => ReferenceRunner.GetGeneratedSource(source);
 }
