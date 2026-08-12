@@ -46,3 +46,17 @@ internal sealed class TestService
 | `Pattern` | Regex pattern to match class names to register |
 | `Assembly` | Assembly to scan (defaults to the calling assembly) |
 | `Namespace` | Namespace prefix to filter classes |
+
+## MSBuild Properties
+
+| Property | Default | Description |
+|---|---|---|
+| `ServiceRegistrationResolveReferencedAssembly` | `false` | Enable scanning of referenced assemblies specified by the `Assembly` parameter. When disabled, only the containing assembly is scanned and `Assembly` usage is reported as warning BTSR0005 |
+| `ServiceRegistrationIgnoreInterface` | (none) | Comma-separated interface names to exclude from registration. `System.IDisposable` and `System.IAsyncDisposable` are always excluded |
+
+```xml
+<PropertyGroup>
+  <ServiceRegistrationResolveReferencedAssembly>true</ServiceRegistrationResolveReferencedAssembly>
+  <ServiceRegistrationIgnoreInterface>MyApp.INavigation</ServiceRegistrationIgnoreInterface>
+</PropertyGroup>
+```
