@@ -184,7 +184,7 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
             list.Add(new AttributeModel(lifetime, pattern, assembly, ns, locationInfo));
         }
 
-        return list.ToArray();
+        return [.. list];
     }
 
     private static bool IsCandidateSyntax(SyntaxNode syntax) =>
@@ -242,7 +242,7 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
     {
         if (!option.ResolveReferencedAssembly)
         {
-            return new EquatableArray<ReferenceAssemblyModel>([]);
+            return [with([])];
         }
 
         // Collect assembly names specified by attributes
@@ -260,7 +260,7 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
 
         if (assemblyNames.Count == 0)
         {
-            return new EquatableArray<ReferenceAssemblyModel>([]);
+            return [with([])];
         }
 
         var list = new List<ReferenceAssemblyModel>();
@@ -280,7 +280,7 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
             }
         }
 
-        return new EquatableArray<ReferenceAssemblyModel>(list.ToArray());
+        return [with([.. list])];
     }
 
     private static ResolvedRegistrationModel Resolve(
@@ -401,7 +401,7 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
             }
         }
 
-        return new EquatableArray<CandidateClassModel>([]);
+        return [with([])];
     }
 
     // ------------------------------------------------------------
