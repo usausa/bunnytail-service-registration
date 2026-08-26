@@ -156,6 +156,8 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
             var pattern = attributeData.ConstructorArguments[1].Value?.ToString() ?? string.Empty;
             var assembly = string.Empty;
             var ns = string.Empty;
+            var asType = default(string?);
+            var withInterfaces = false;
 
             foreach (var parameter in attributeData.NamedArguments)
             {
@@ -175,13 +177,19 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
                     case "Namespace":
                         ns = value.ToString();
                         break;
+                    case "As":
+                        asType = (value as ITypeSymbol)?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                        break;
+                    case "WithInterfaces":
+                        withInterfaces = value is true;
+                        break;
                 }
             }
 
             var locationInfo = attributeData.ApplicationSyntaxReference is { } syntaxRef
                 ? LocationInfo.CreateFrom(syntaxRef.GetSyntax())
                 : null;
-            list.Add(new AttributeModel(lifetime, pattern, assembly, ns, locationInfo));
+            list.Add(new AttributeModel(lifetime, pattern, assembly, ns, asType, withInterfaces, locationInfo));
         }
 
         return [.. list];
@@ -324,6 +332,11 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
                         continue;
                     }
 
+                    if ((attribute.AsType is not null) && attribute.WithInterfaces)
+                    {
+                        diagnostics.Add(new DiagnosticInfo(Diagnostics.ConflictingInterfaceRegistration, attribute.Location, attribute.Pattern));
+                    }
+
                     // Select candidate source
                     IEnumerable<CandidateClassModel> targets;
                     if (String.IsNullOrEmpty(attribute.Assembly))
@@ -366,6 +379,8 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
                         registrations.Add(new RegistrationModel(
                             candidate.FullyQualifiedName,
                             new EquatableArray<string>(interfaceNames),
+                            attribute.AsType,
+                            attribute.WithInterfaces,
                             attribute.Lifetime));
                     }
                 }
@@ -498,22 +513,21 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
 
             foreach (var registration in method.Registrations)
             {
-                var interfaces = registration.InterfaceTypeNames.ToArray();
-                if (interfaces.Length == 0)
+                if (registration.AsType is not null)
                 {
-                    BuildRegistrationCall(builder, method.ParameterName, registration.Lifetime, registration.ServiceTypeName);
+                    BuildRegistrationCall(builder, method.ParameterName, registration.Lifetime, registration.ServiceTypeName, registration.AsType);
+                    continue;
                 }
-                else if (interfaces.Length == 1)
+
+                BuildRegistrationCall(builder, method.ParameterName, registration.Lifetime, registration.ServiceTypeName);
+                if (!registration.WithInterfaces)
                 {
-                    BuildRegistrationCall(builder, method.ParameterName, registration.Lifetime, registration.ServiceTypeName, interfaces[0]);
+                    continue;
                 }
-                else
+
+                foreach (var serviceAs in registration.InterfaceTypeNames)
                 {
-                    BuildRegistrationCall(builder, method.ParameterName, registration.Lifetime, registration.ServiceTypeName);
-                    foreach (var serviceAs in interfaces)
-                    {
-                        BuildRegistrationCallAsInterface(builder, method.ParameterName, registration.Lifetime, registration.ServiceTypeName, serviceAs);
-                    }
+                    BuildRegistrationCallAsInterface(builder, method.ParameterName, registration.Lifetime, registration.ServiceTypeName, serviceAs);
                 }
             }
 

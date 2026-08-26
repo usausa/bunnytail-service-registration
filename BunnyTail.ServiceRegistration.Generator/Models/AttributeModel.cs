@@ -7,4 +7,6 @@ internal sealed record AttributeModel(
     string Pattern,
     string Assembly,
     string Namespace,
+    string? AsType,
+    bool WithInterfaces,
     LocationInfo? Location);

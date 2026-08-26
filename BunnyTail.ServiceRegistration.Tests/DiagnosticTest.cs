@@ -80,7 +80,7 @@ public class DiagnosticTest
             """
             internal static partial class ServiceCollectionExtensions
             {
-                [ServiceRegistration(Lifetime.Singleton, "Service$", Assembly = "Develop.Library")]
+                [ServiceRegistration(Lifetime.Singleton, "Service$", Assembly = "Develop.Library", WithInterfaces = true)]
                 public static partial IServiceCollection AddServices(this IServiceCollection services);
             }
             """);
@@ -99,7 +99,7 @@ public class DiagnosticTest
             """
             internal static partial class ServiceCollectionExtensions
             {
-                [ServiceRegistration(Lifetime.Singleton, "Service$", Assembly = "Develop.Library")]
+                [ServiceRegistration(Lifetime.Singleton, "Service$", Assembly = "Develop.Library", WithInterfaces = true)]
                 public static partial IServiceCollection AddServices(this IServiceCollection services);
             }
             """);
@@ -114,7 +114,7 @@ public class DiagnosticTest
             """
             internal static partial class ServiceCollectionExtensions
             {
-                [ServiceRegistration(Lifetime.Singleton, "Service$", Assembly = "Develop.Library")]
+                [ServiceRegistration(Lifetime.Singleton, "Service$", Assembly = "Develop.Library", WithInterfaces = true)]
                 public static partial IServiceCollection AddServices(this IServiceCollection services);
             }
             """);
@@ -141,7 +141,7 @@ public class DiagnosticTest
 
             internal static partial class ServiceCollectionExtensions
             {
-                [ServiceRegistration(Lifetime.Singleton, "Service$")]
+                [ServiceRegistration(Lifetime.Singleton, "Service$", WithInterfaces = true)]
                 public static partial IServiceCollection AddServices(this IServiceCollection services);
             }
             """);
@@ -166,7 +166,7 @@ public class DiagnosticTest
 
             internal static partial class ServiceCollectionExtensions
             {
-                [ServiceRegistration(Lifetime.Singleton, "Service$")]
+                [ServiceRegistration(Lifetime.Singleton, "Service$", WithInterfaces = true)]
                 public static partial IServiceCollection AddServices(this IServiceCollection services);
             }
             """);

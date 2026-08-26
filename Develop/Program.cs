@@ -21,8 +21,8 @@ internal static partial class ServiceCollectionExtensions
     [ServiceRegistration(Lifetime.Transient, "ViewModel$")]
     public static partial IServiceCollection AddViews(this IServiceCollection services);
 
-    [ServiceRegistration(Lifetime.Singleton, "Service$")]
-    [ServiceRegistration(Lifetime.Singleton, "Service$", Assembly = "Develop.Library")]
+    [ServiceRegistration(Lifetime.Singleton, "Service$", WithInterfaces = true)]
+    [ServiceRegistration(Lifetime.Singleton, "Service$", Assembly = "Develop.Library", WithInterfaces = true)]
     public static partial IServiceCollection AddServices(this IServiceCollection services);
 }
 

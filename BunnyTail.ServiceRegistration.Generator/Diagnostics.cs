@@ -43,4 +43,12 @@ internal static class Diagnostics
         category: "Usage",
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
+
+    public static DiagnosticDescriptor ConflictingInterfaceRegistration { get; } = new(
+        id: "BTSR0006",
+        title: "Conflicting interface registration",
+        messageFormat: "As replaces the service type, so the implementation is not registered and the interface delegate has nothing to resolve. Specify only one of them. pattern=[{0}]",
+        category: "Usage",
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
 }

@@ -14,6 +14,10 @@ public sealed class ServiceRegistrationAttribute : Attribute
 
     public string Namespace { get; set; } = default!;
 
+    public Type? As { get; set; }
+
+    public bool WithInterfaces { get; set; }
+
     public ServiceRegistrationAttribute(Lifetime lifetime, [StringSyntax(StringSyntaxAttribute.Regex)] string pattern)
     {
         Lifetime = lifetime;
