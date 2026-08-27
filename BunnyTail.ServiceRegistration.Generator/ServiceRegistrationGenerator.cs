@@ -390,7 +390,7 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
                     method.MethodAccessibility,
                     method.MethodName,
                     method.ParameterName,
-                    new EquatableArray<RegistrationModel>(registrations.ToArray())));
+                    new EquatableArray<RegistrationModel>(registrations)));
             }
 
             // Build class registration model
@@ -398,12 +398,12 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
                 group.Key.Namespace,
                 group.Key.ClassName,
                 groupMethods[0].IsValueType,
-                new EquatableArray<MethodRegistrationModel>(methodRegistrations.ToArray())));
+                new EquatableArray<MethodRegistrationModel>(methodRegistrations)));
         }
 
         return new ResolvedRegistrationModel(
-            new EquatableArray<ClassModel>(classes.ToArray()),
-            new EquatableArray<DiagnosticInfo>(diagnostics.ToArray()));
+            new EquatableArray<ClassModel>(classes),
+            new EquatableArray<DiagnosticInfo>(diagnostics));
     }
 
     private static EquatableArray<CandidateClassModel> FindReferenceCandidates(EquatableArray<ReferenceAssemblyModel> references, string assembly)
