@@ -22,7 +22,7 @@
     <ServiceRegistrationIgnoreInterface>BunnyTail.ServiceRegistration.INavigation,BunnyTail.ServiceRegistration.IMarkerIgnored</ServiceRegistrationIgnoreInterface>
   </PropertyGroup>
 
-  <Import Project="..\BunnyTail.ServiceRegistration.props" />
+  <Import Project="..\BunnyTail.ServiceRegistration.targets" />
 
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.9.0" PrivateAssets="all" />

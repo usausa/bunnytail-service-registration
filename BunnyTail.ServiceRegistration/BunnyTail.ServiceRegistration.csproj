@@ -14,9 +14,9 @@
 
   <Target Name="PackBuildOutputs" DependsOnTargets="SatelliteDllsProjectOutputGroup;DebugSymbolsProjectOutputGroup">
     <ItemGroup>
-      <TfmSpecificPackageFile Include="..\BunnyTail.ServiceRegistration.props" PackagePath="build" />
       <TfmSpecificPackageFile Include="..\BunnyTail.ServiceRegistration.Generator\bin\$(Configuration)\netstandard2.0\BunnyTail.ServiceRegistration.Generator.dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
       <TfmSpecificPackageFile Include="$(PKGSourceGenerateHelper)\lib\netstandard2.0\SourceGenerateHelper.dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
+      <TfmSpecificPackageFile Include="..\BunnyTail.ServiceRegistration.targets" Pack="true" PackagePath="buildTransitive\BunnyTail.ServiceRegistration.targets" Visible="false" />
     </ItemGroup>
   </Target>
 
