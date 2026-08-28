@@ -36,6 +36,10 @@ internal interface INavigation
     void OnNavigate();
 }
 
+internal sealed class FooView
+{
+}
+
 internal sealed class FooViewModel : INavigation
 {
     public void OnNavigate()

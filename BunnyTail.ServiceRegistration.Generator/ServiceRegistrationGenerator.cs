@@ -353,6 +353,7 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
                         targets = FindReferenceCandidates(references, attribute.Assembly);
                     }
 
+                    var patternMatched = false;
                     foreach (var candidate in targets)
                     {
                         // Filter by namespace
@@ -371,6 +372,8 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
                             continue;
                         }
 
+                        patternMatched = true;
+
                         // Select interfaces
                         var interfaceNames = candidate.Interfaces
                             .Where(x => !ignoreInterfaces.Contains(x.DisplayName))
@@ -382,6 +385,11 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
                             attribute.AsType,
                             attribute.WithInterfaces,
                             attribute.Lifetime));
+                    }
+
+                    if (!patternMatched)
+                    {
+                        diagnostics.Add(new DiagnosticInfo(Diagnostics.PatternNoMatch, attribute.Location, attribute.Pattern));
                     }
                 }
 

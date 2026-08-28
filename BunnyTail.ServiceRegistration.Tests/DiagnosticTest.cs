@@ -125,6 +125,21 @@ public class DiagnosticTest
         Assert.Contains(diagnostics, static x => x.Id == "BTSR0005");
     }
 
+    [Fact]
+    public void Btsr0007PatternWithNoMatchEmitsDiagnostic()
+    {
+        var diagnostics = GeneratorTestHelper.GetDiagnostics(Head +
+            """
+            internal static partial class ServiceCollectionExtensions
+            {
+                [ServiceRegistration(Lifetime.Singleton, "NothingMatchesThis$")]
+                public static partial IServiceCollection AddNothing(this IServiceCollection services);
+            }
+            """);
+
+        Assert.Contains(diagnostics, static x => x.Id == "BTSR0007");
+    }
+
     // ------------------------------------------------------------
     // Valid
     // ------------------------------------------------------------

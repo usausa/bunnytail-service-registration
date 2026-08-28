@@ -51,4 +51,12 @@ internal static class Diagnostics
         category: "Usage",
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
+
+    public static DiagnosticDescriptor PatternNoMatch { get; } = new(
+        id: "BTSR0007",
+        title: "Pattern matched no type",
+        messageFormat: "Pattern matched no type, so nothing is registered. Check the pattern, Namespace and Assembly. pattern=[{0}]",
+        category: "Usage",
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
 }

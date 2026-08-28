@@ -22,6 +22,7 @@ public class GeneratorTest
         Assert.NotNull(provider.GetService<DisposalService>());
         Assert.NotNull(provider.GetService<IBazService>());
 
+        Assert.NotNull(provider.GetService<FooView>());
         Assert.NotNull(provider.GetService<FooViewModel>());
         Assert.NotNull(provider.GetService<BarViewModel>());
         Assert.Empty(provider.GetServices<INavigation>());
@@ -186,6 +187,10 @@ internal interface INavigation
 #pragma warning disable IDE0051
     void OnNavigate();
 #pragma warning restore IDE0051
+}
+
+internal sealed class FooView
+{
 }
 
 internal sealed class FooViewModel : INavigation
