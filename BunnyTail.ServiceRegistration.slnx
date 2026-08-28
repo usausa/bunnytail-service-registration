@@ -16,9 +16,11 @@
     <File Path="AGENTS.md" />
     <File Path="Analyzers.ruleset" />
     <File Path="BunnyTail.ServiceRegistration.sln.DotSettings" />
+    <File Path="BunnyTail.ServiceRegistration.props" />
     <File Path="BunnyTail.ServiceRegistration.targets" />
     <File Path="CLAUDE.md" />
     <File Path="CodeCoverage.runsettings" />
+    <File Path="Diagnostics.md" />
     <File Path="Directory.Build.props" />
     <File Path="Directory.Build.targets" />
     <File Path="LICENSE" />

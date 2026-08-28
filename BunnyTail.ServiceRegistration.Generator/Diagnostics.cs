@@ -31,7 +31,7 @@ internal static class Diagnostics
     public static DiagnosticDescriptor InvalidPattern { get; } = new(
         id: "BTSR0004",
         title: "Invalid regex pattern",
-        messageFormat: "Invalid regex pattern. pattern=[{0}]",
+        messageFormat: "Pattern is not a valid regex. pattern=[{0}]",
         category: "Usage",
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
@@ -39,7 +39,7 @@ internal static class Diagnostics
     public static DiagnosticDescriptor ReferencedAssemblyDisabled { get; } = new(
         id: "BTSR0005",
         title: "Referenced assembly resolution disabled",
-        messageFormat: "Set ServiceRegistrationResolveReferencedAssembly to true. assembly=[{0}]",
+        messageFormat: "Referenced assembly is not resolved. assembly=[{0}]",
         category: "Usage",
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
@@ -47,7 +47,7 @@ internal static class Diagnostics
     public static DiagnosticDescriptor ConflictingInterfaceRegistration { get; } = new(
         id: "BTSR0006",
         title: "Conflicting interface registration",
-        messageFormat: "As and WithInterfaces cannot be combined. pattern=[{0}]",
+        messageFormat: "As and WithInterfaces conflict. pattern=[{0}]",
         category: "Usage",
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
@@ -55,7 +55,7 @@ internal static class Diagnostics
     public static DiagnosticDescriptor PatternNoMatch { get; } = new(
         id: "BTSR0007",
         title: "Pattern matched no type",
-        messageFormat: "Pattern matched no type. pattern=[{0}]",
+        messageFormat: "No type matched the pattern. pattern=[{0}]",
         category: "Usage",
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
