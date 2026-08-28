@@ -38,14 +38,24 @@ internal sealed class TestService
 }
 ```
 
+## Registration Shapes
+
+| Attribute | Generated registration per match |
+|---|---|
+| `[ServiceRegistration(Lifetime.Transient, "View$")]` | `AddTransient<Impl>()` |
+| `[ServiceRegistration(Lifetime.Transient, "Handler$", As = typeof(IHandler))]` | `AddTransient<IHandler, Impl>()` |
+| `[ServiceRegistration(Lifetime.Singleton, "Service$", WithInterfaces = true)]` | `AddSingleton<Impl>()` and `AddSingleton<IFoo>(x => x.GetRequiredService<Impl>())` per interface |
+
 ## Attribute Parameters
 
 | Parameter | Description |
 |---|---|
 | `Lifetime` | Service lifetime: `Transient`, `Singleton`, or `Scoped` |
-| `Pattern` | Regex pattern to match class names to register |
+| `Pattern` | Regex pattern to match class names to register. Matching no type is reported as warning BTSR0007 |
 | `Assembly` | Assembly to scan (defaults to the calling assembly) |
 | `Namespace` | Namespace prefix to filter classes |
+| `As` | Service type applied to every matched class, replacing the implementation type |
+| `WithInterfaces` | Also register each directly declared interface as a delegate to the implementation. Default `false` |
 
 ## MSBuild Properties
 
