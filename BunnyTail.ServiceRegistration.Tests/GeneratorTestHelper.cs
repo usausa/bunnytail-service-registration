@@ -30,4 +30,7 @@ internal static class GeneratorTestHelper
     public static IReadOnlyList<Diagnostic> GetDiagnosticsWithReference(string source) => ReferenceRunner.GetDiagnostics(source);
 
     public static string GetGeneratedSourceWithReference(string source) => ReferenceRunner.GetGeneratedSource(source);
+
+    public static IncrementalRunResult RunIncremental(string source, string addedSource) =>
+        Runner.WithTracking().RunIncremental(source, addedSource);
 }

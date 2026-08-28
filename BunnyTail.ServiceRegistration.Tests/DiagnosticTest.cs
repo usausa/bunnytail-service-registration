@@ -9,9 +9,46 @@ public class DiagnosticTest
 
         """;
 
-    //-----------------------------------------------------------------------
+    // ------------------------------------------------------------
+    // Interface conflict
+    // ------------------------------------------------------------
+
+    [Fact]
+    public void Btsr0006ConflictingInterfaceRegistrationEmitsDiagnostic()
+    {
+        // Arrange
+        const string source =
+            """
+            using BunnyTail.ServiceRegistration;
+            using Microsoft.Extensions.DependencyInjection;
+
+            namespace Test;
+
+            public interface IService
+            {
+            }
+
+            public sealed class Service : IService
+            {
+            }
+
+            internal static partial class ServiceCollectionExtensions
+            {
+                [ServiceRegistration(Lifetime.Singleton, "Service$", As = typeof(IService), WithInterfaces = true)]
+                public static partial IServiceCollection AddServices(this IServiceCollection services);
+            }
+            """;
+
+        // Act
+        var diagnostics = GeneratorTestHelper.GetDiagnostics(source);
+
+        // Assert
+        Assert.Contains(diagnostics, static x => x.Id == "BTSR0006");
+    }
+
+    // ------------------------------------------------------------
     // BTSR
-    //-----------------------------------------------------------------------
+    // ------------------------------------------------------------
 
     [Fact]
     public void Btsr0001NonPartialMethodEmitsDiagnostic()
@@ -88,9 +125,9 @@ public class DiagnosticTest
         Assert.Contains(diagnostics, static x => x.Id == "BTSR0005");
     }
 
-    //-----------------------------------------------------------------------
+    // ------------------------------------------------------------
     // Valid
-    //-----------------------------------------------------------------------
+    // ------------------------------------------------------------
 
     [Fact]
     public void AssemblyWithResolveOptionEmitsNoDiagnostic()
