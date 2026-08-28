@@ -39,7 +39,7 @@ internal static class Diagnostics
     public static DiagnosticDescriptor ReferencedAssemblyDisabled { get; } = new(
         id: "BTSR0005",
         title: "Referenced assembly resolution disabled",
-        messageFormat: "Referenced assembly is not searched. Set ServiceRegistrationResolveReferencedAssembly to true. assembly=[{0}]",
+        messageFormat: "Set ServiceRegistrationResolveReferencedAssembly to true. assembly=[{0}]",
         category: "Usage",
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
@@ -47,7 +47,7 @@ internal static class Diagnostics
     public static DiagnosticDescriptor ConflictingInterfaceRegistration { get; } = new(
         id: "BTSR0006",
         title: "Conflicting interface registration",
-        messageFormat: "As replaces the service type, so the implementation is not registered and the interface delegate has nothing to resolve. Specify only one of them. pattern=[{0}]",
+        messageFormat: "As and WithInterfaces cannot be combined. pattern=[{0}]",
         category: "Usage",
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
@@ -55,7 +55,7 @@ internal static class Diagnostics
     public static DiagnosticDescriptor PatternNoMatch { get; } = new(
         id: "BTSR0007",
         title: "Pattern matched no type",
-        messageFormat: "Pattern matched no type, so nothing is registered. Check the pattern, Namespace and Assembly. pattern=[{0}]",
+        messageFormat: "Pattern matched no type. pattern=[{0}]",
         category: "Usage",
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
