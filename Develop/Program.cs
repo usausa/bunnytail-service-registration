@@ -27,18 +27,14 @@ internal static partial class ServiceCollectionExtensions
 }
 
 #pragma warning disable CA1812
-internal sealed class TestService
-{
-}
+internal sealed class TestService;
 
 internal interface INavigation
 {
     void OnNavigate();
 }
 
-internal sealed class FooView
-{
-}
+internal sealed class FooView;
 
 internal sealed class FooViewModel : INavigation
 {

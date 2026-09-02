@@ -178,9 +178,7 @@ internal sealed class SingleFaceProbe : IRuleMarker;
 
 #pragma warning disable CA1812
 // ReSharper disable ClassNeverInstantiated.Global
-internal sealed class TestService
-{
-}
+internal sealed class TestService;
 
 internal interface INavigation
 {
@@ -189,9 +187,7 @@ internal interface INavigation
 #pragma warning restore IDE0051
 }
 
-internal sealed class FooView
-{
-}
+internal sealed class FooView;
 
 internal sealed class FooViewModel : INavigation
 {

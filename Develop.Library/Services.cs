@@ -73,6 +73,4 @@ public sealed class DisposalBazService : IBazService, IDisposable
 
 // internal class in reference assembly — must be excluded from scan (no IVT declared)
 #pragma warning disable CA1812
-internal sealed class InternalLibraryService
-{
-}
+internal sealed class InternalLibraryService;
