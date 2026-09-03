@@ -1,6 +1,6 @@
 namespace BunnyTail.ServiceRegistration;
 
-public class DiagnosticTest
+public class DiagnosticTests
 {
     private const string Head =
         """

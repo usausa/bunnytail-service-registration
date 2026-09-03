@@ -4,7 +4,7 @@ using Develop.Library;
 
 using Microsoft.Extensions.DependencyInjection;
 
-public class GeneratorTest
+public class GeneratorTests
 {
     [Fact]
     public void TestService()
