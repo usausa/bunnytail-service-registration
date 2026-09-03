@@ -192,7 +192,9 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
             list.Add(new AttributeModel(lifetime, pattern, assembly, ns, asType, withInterfaces, locationInfo));
         }
 
+#pragma warning disable IDE0028
         return list.ToArray();
+#pragma warning restore IDE0028
     }
 
     private static bool IsCandidateSyntax(SyntaxNode syntax) =>
@@ -288,7 +290,7 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
             }
         }
 
-        return [with(list.ToArray())];
+        return new(list);
     }
 
     private static ResolvedRegistrationModel Resolve(
