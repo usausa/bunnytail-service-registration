@@ -18,7 +18,6 @@
     <File Path="BunnyTail.ServiceRegistration.sln.DotSettings" />
     <File Path="BunnyTail.ServiceRegistration.props" />
     <File Path="BunnyTail.ServiceRegistration.targets" />
-    <File Path="CLAUDE.md" />
     <File Path="CodeCoverage.runsettings" />
     <File Path="Diagnostics.md" />
     <File Path="Directory.Build.props" />
