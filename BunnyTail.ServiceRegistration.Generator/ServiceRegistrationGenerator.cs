@@ -2,6 +2,7 @@ namespace BunnyTail.ServiceRegistration.Generator;
 
 using System;
 using System.Collections.Immutable;
+using System.Globalization;
 using System.Text.RegularExpressions;
 
 using BunnyTail.ServiceRegistration.Generator.Models;
@@ -20,14 +21,20 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
 
     private const string ServiceCollectionName = "Microsoft.Extensions.DependencyInjection.IServiceCollection";
 
-    private const string ResolveReferencedAssemblyProperty = "build_property.ServiceRegistrationResolveReferencedAssembly";
+    private const string ResolveReferencedAssemblyProperty = "ServiceRegistrationResolveReferencedAssembly";
     private const string IgnoreInterfaceProperty = "build_property.ServiceRegistrationIgnoreInterface";
+
+    private const string ServiceCollectionExtensionsName = "global::Microsoft.Extensions.DependencyInjection.ServiceCollectionServiceExtensions";
+    private const string ServiceProviderExtensionsName = "global::Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions";
 
     private static readonly string[] IgnoreInterfaces =
     [
         "System.IDisposable",
         "System.IAsyncDisposable"
     ];
+
+    private static readonly SymbolDisplayFormat ExpandedTupleFormat =
+        SymbolDisplayFormat.FullyQualifiedFormat.AddMiscellaneousOptions(SymbolDisplayMiscellaneousOptions.ExpandValueTuple);
 
     // ------------------------------------------------------------
     // Initialize
@@ -38,6 +45,10 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
         var optionProvider = context.AnalyzerConfigOptionsProvider
             .Select(static (provider, _) => SelectOption(provider));
 
+        context.RegisterSourceOutput(
+            optionProvider,
+            static (context, option) => ReportOptionDiagnostics(context, option));
+
         var propertyProvider = context.SyntaxProvider
             .ForAttributeWithMetadataName(
                 AttributeName,
@@ -45,23 +56,29 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
                 static (context, _) => GetMethodModel(context))
             .Collect();
 
-        context.RegisterSourceOutput(
-            propertyProvider,
-            static (context, methods) => ReportMethodDiagnostics(context, methods));
+        var treeProvider = context.ForAttributeWithMetadataNameSyntaxTrees(
+            AttributeName,
+            static (syntax, _) => IsTargetSyntax(syntax));
 
-        var candidateProvider = context.SyntaxProvider
-            .CreateSyntaxProvider(
-                static (syntax, _) => IsCandidateSyntax(syntax),
-                static (context, token) => GetCandidateModel(context, token))
-            .Where(static x => x is not null)
-            .Select(static (x, _) => x!)
-            .Collect()
+        context.RegisterSourceOutput(
+            propertyProvider.Combine(treeProvider),
+            static (context, provider) => ReportMethodDiagnostics(context, provider.Left, provider.Right));
+
+        var candidateProvider = propertyProvider
+            .Combine(context.CompilationProvider)
+            .Select(static (provider, token) => SelectCandidates(provider.Right, provider.Left, token))
             .WithTrackingName("Candidates");
 
-        var referenceProvider = context.CompilationProvider
+        var requestProvider = propertyProvider
+            .Select(static (methods, _) => SelectRequestedAssemblies(methods));
+        var compilationKeyProvider = context.CompilationProvider
+            .Select(static (compilation, _) => new CompilationKeyModel(compilation.AssemblyName, compilation.Options));
+        var referenceProvider = context.MetadataReferencesProvider
+            .Collect()
+            .Combine(compilationKeyProvider)
             .Combine(optionProvider)
-            .Combine(propertyProvider)
-            .Select(static (provider, token) => SelectReferenceCandidates(provider.Left.Left, provider.Left.Right, provider.Right, token))
+            .Combine(requestProvider)
+            .Select(static (provider, token) => SelectReferenceCandidates(provider.Left.Left.Left, provider.Left.Left.Right, provider.Left.Right, provider.Right, token))
             .WithTrackingName("References");
 
         var resolvedProvider = propertyProvider
@@ -74,8 +91,8 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
             .Select(static (resolved, _) => resolved.Diagnostics)
             .WithTrackingName("Diagnostics");
         context.RegisterSourceOutput(
-            resolveDiagnosticProvider,
-            static (context, diagnostics) => ReportResolveDiagnostics(context, diagnostics));
+            resolveDiagnosticProvider.Combine(treeProvider),
+            static (context, provider) => ReportResolveDiagnostics(context, provider.Left, provider.Right));
 
         var classProvider = resolvedProvider
             .SelectMany(static (resolved, _) => resolved.Classes.ToImmutableArray())
@@ -91,11 +108,9 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
 
     private static OptionModel SelectOption(AnalyzerConfigOptionsProvider provider)
     {
-        var resolveReferencedAssembly = provider.GlobalOptions.TryGetValue(ResolveReferencedAssemblyProperty, out var value) &&
-            Boolean.TryParse(value, out var result) &&
-            result;
-        var ignoreInterface = provider.GlobalOptions.TryGetValue(IgnoreInterfaceProperty, out value) ? value : string.Empty;
-        return new OptionModel(resolveReferencedAssembly, ignoreInterface);
+        provider.GlobalOptions.TryGetValue<bool>(ResolveReferencedAssemblyProperty, out var resolveReferencedAssembly, out var invalidValue);
+        var ignoreInterface = provider.GlobalOptions.TryGetValue(IgnoreInterfaceProperty, out var value) ? value : string.Empty;
+        return new OptionModel(resolveReferencedAssembly, invalidValue, ignoreInterface);
     }
 
     private static bool IsTargetSyntax(SyntaxNode syntax) =>
@@ -107,21 +122,22 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
         var symbol = (IMethodSymbol)context.TargetSymbol;
 
         // Validate method definition
-        if (!symbol.IsStatic || !symbol.IsPartialDefinition || !symbol.IsExtensionMethod)
+        if (!symbol.IsStatic || !symbol.IsPartialDefinition || (symbol.PartialImplementationPart is not null) || !symbol.IsExtensionMethod)
         {
             return Results.Error<MethodModel>(new DiagnosticInfo(Diagnostics.InvalidMethodDefinition, syntax.Identifier.GetLocation(), symbol.Name));
         }
 
         // Validate parameter
         var firstParam = symbol.Parameters.Length == 1 ? symbol.Parameters[0] : default;
-        if ((firstParam is null) || (firstParam.Type.ToDisplayString() != ServiceCollectionName))
+        if ((firstParam is null) ||
+            !firstParam.Type.HasFullyQualifiedMetadataName(ServiceCollectionName) ||
+            (firstParam.Type.NullableAnnotation == NullableAnnotation.Annotated))
         {
             return Results.Error<MethodModel>(new DiagnosticInfo(Diagnostics.InvalidMethodParameter, syntax.Identifier.GetLocation(), symbol.Name));
         }
 
         // Validate return type
-        if ((symbol.ReturnType is not INamedTypeSymbol returnTypeSymbol) ||
-            (returnTypeSymbol.ToDisplayString() != ServiceCollectionName))
+        if (!symbol.ReturnType.HasFullyQualifiedMetadataName(ServiceCollectionName))
         {
             return Results.Error<MethodModel>(new DiagnosticInfo(Diagnostics.InvalidMethodReturnType, syntax.Identifier.GetLocation(), symbol.Name));
         }
@@ -135,61 +151,42 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
             ns,
             containingType.GetClassName(),
             containingType.IsValueType,
-            symbol.DeclaredAccessibility,
-            symbol.Name,
-            firstParam.Name,
-            new EquatableArray<AttributeModel>(GetAttributeModel(symbol))));
+            symbol.GetImplementationSignature(syntax),
+            CSharpIdentifier.Escape(firstParam.Name),
+            new EquatableArray<AttributeModel>(GetAttributeModel(context.Attributes))));
     }
 
-    private static AttributeModel[] GetAttributeModel(IMethodSymbol symbol)
+    private static AttributeModel[] GetAttributeModel(ImmutableArray<AttributeData> attributes)
     {
         var list = new List<AttributeModel>();
 
-        foreach (var attributeData in symbol.GetAttributes())
+        foreach (var attributeData in attributes)
         {
-            if (attributeData.AttributeClass?.ToDisplayString() != AttributeName)
+            if (!attributeData.TryGetConstructorArgument<int>(0, out var lifetime) ||
+                !attributeData.TryGetConstructorArgument(1, out var patternArgument))
             {
                 continue;
             }
 
-            var lifetime = (int)attributeData.ConstructorArguments[0].Value!;
-            var pattern = attributeData.ConstructorArguments[1].Value?.ToString() ?? string.Empty;
-            var assembly = string.Empty;
-            var ns = string.Empty;
-            var asType = default(string?);
-            var withInterfaces = false;
-
-            foreach (var parameter in attributeData.NamedArguments)
-            {
-                var name = parameter.Key;
-                var value = parameter.Value.Value;
-
-                if (String.IsNullOrEmpty(name) || (value is null))
-                {
-                    continue;
-                }
-
-                switch (name)
-                {
-                    case "Assembly":
-                        assembly = value.ToString();
-                        break;
-                    case "Namespace":
-                        ns = value.ToString();
-                        break;
-                    case "As":
-                        asType = (value as ITypeSymbol)?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-                        break;
-                    case "WithInterfaces":
-                        withInterfaces = value is true;
-                        break;
-                }
-            }
+            var pattern = patternArgument.Value as string ?? string.Empty;
+            var assembly = attributeData.TryGetNamedArgument<string>("Assembly", out var assemblyName) ? assemblyName : string.Empty;
+            var ns = attributeData.TryGetNamedArgument<string>("Namespace", out var namespaceName) ? namespaceName : string.Empty;
+            attributeData.TryGetNamedArgument<ITypeSymbol>("As", out var asSymbol);
+            var withInterfaces = attributeData.TryGetNamedArgument<bool>("WithInterfaces", out var withInterfacesValue) && withInterfacesValue;
 
             var locationInfo = attributeData.ApplicationSyntaxReference is { } syntaxRef
                 ? LocationInfo.CreateFrom(syntaxRef.GetSyntax())
                 : null;
-            list.Add(new AttributeModel(lifetime, pattern, assembly, ns, asType, withInterfaces, locationInfo));
+            list.Add(new AttributeModel(
+                lifetime,
+                IsDefinedEnumValue(attributeData.ConstructorArguments[0]),
+                pattern,
+                assembly,
+                ns,
+                asSymbol?.ToDisplayString(ExpandedTupleFormat),
+                asSymbol?.ToDisplayString(SymbolDisplayFormats.FullyQualifiedNullable),
+                withInterfaces,
+                locationInfo));
         }
 
 #pragma warning disable IDE0028
@@ -197,40 +194,77 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
 #pragma warning restore IDE0028
     }
 
-    private static bool IsCandidateSyntax(SyntaxNode syntax) =>
-        (syntax is ClassDeclarationSyntax classSyntax) &&
-        (classSyntax.TypeParameterList is null) &&
-        !classSyntax.Modifiers.Any(SyntaxKind.StaticKeyword) &&
-        !classSyntax.Modifiers.Any(SyntaxKind.AbstractKeyword);
-
-    private static CandidateClassModel? GetCandidateModel(GeneratorSyntaxContext context, CancellationToken token)
+    private static bool IsDefinedEnumValue(TypedConstant constant)
     {
-        var syntax = (ClassDeclarationSyntax)context.Node;
-        if ((context.SemanticModel.GetDeclaredSymbol(syntax, token) is not { } symbol) || !ClassFilter(symbol))
+        if ((constant.Type is not INamedTypeSymbol { TypeKind: TypeKind.Enum } type) || (constant.Value is null))
         {
-            return null;
+            return true;
         }
 
-        var references = symbol.DeclaringSyntaxReferences;
-        if ((references.Length > 1) &&
-            ((references[0].SyntaxTree != syntax.SyntaxTree) || (references[0].Span != syntax.Span)))
+        var value = ToBits(constant.Value);
+        var flags = type.HasAttribute("System.FlagsAttribute");
+        var all = 0UL;
+        foreach (var member in type.GetMembers())
         {
-            return null;
+            if ((member is IFieldSymbol { HasConstantValue: true } field) && (field.ConstantValue is not null))
+            {
+                var bits = ToBits(field.ConstantValue);
+                if (bits == value)
+                {
+                    return true;
+                }
+
+                all |= bits;
+            }
         }
 
-        return CreateCandidateModel(symbol);
+        return flags && ((value & ~all) == 0);
+
+        static ulong ToBits(object value) => value switch
+        {
+            sbyte x => unchecked((ulong)x),
+            byte x => x,
+            short x => unchecked((ulong)x),
+            ushort x => x,
+            int x => unchecked((ulong)x),
+            uint x => x,
+            long x => unchecked((ulong)x),
+            ulong x => x,
+            _ => 0
+        };
     }
 
-    private static CandidateClassModel CreateCandidateModel(INamedTypeSymbol symbol)
+    private static CandidateClassModel CreateCandidateModel(INamedTypeSymbol symbol, bool isAccessible)
     {
+        if (!isAccessible)
+        {
+            return new CandidateClassModel(
+                symbol.ContainingNamespace.ToDisplayString(),
+                symbol.Name,
+                symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                false,
+                new EquatableArray<InterfaceModel>([]),
+                new EquatableArray<string>([]));
+        }
+
         var interfaces = symbol.Interfaces
-            .Select(static x => new InterfaceModel(x.ToDisplayString(), x.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)))
+            .Select(static x => new InterfaceModel(x.ToDisplayString(), x.ToDisplayString(SymbolDisplayFormats.FullyQualifiedNullable)))
             .ToArray();
+
+        var serviceTypes = new List<string>();
+        for (var type = symbol.BaseType; type is not null; type = type.BaseType)
+        {
+            serviceTypes.Add(type.ToDisplayString(ExpandedTupleFormat));
+        }
+        serviceTypes.AddRange(symbol.AllInterfaces.Select(static x => x.ToDisplayString(ExpandedTupleFormat)));
+
         return new CandidateClassModel(
             symbol.ContainingNamespace.ToDisplayString(),
             symbol.Name,
             symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
-            new EquatableArray<InterfaceModel>(interfaces));
+            true,
+            new EquatableArray<InterfaceModel>(interfaces),
+            new EquatableArray<string>(serviceTypes.ToArray()));
     }
 
     private static bool ClassFilter(INamedTypeSymbol symbol) =>
@@ -238,43 +272,115 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
         !symbol.IsStatic &&
         !symbol.IsAbstract &&
         !symbol.IsGenericType &&
-        !symbol.IsFileLocal;
+        !(symbol.IsObsolete(out var isError) && isError);
+
+    private static bool IsAccessible(INamedTypeSymbol symbol, Compilation compilation)
+    {
+        for (var type = symbol; type is not null; type = type.ContainingType)
+        {
+            if (type.IsFileLocal)
+            {
+                return false;
+            }
+        }
+
+        return compilation.IsSymbolAccessibleWithin(symbol, compilation.Assembly);
+    }
 
     // ------------------------------------------------------------
     // Resolver
     // ------------------------------------------------------------
 
-    private static EquatableArray<ReferenceAssemblyModel> SelectReferenceCandidates(
-        Compilation compilation,
-        OptionModel option,
-        ImmutableArray<Result<MethodModel>> methods,
-        CancellationToken token)
+    private static EquatableArray<CandidateClassModel> SelectCandidates(Compilation compilation, ImmutableArray<Result<MethodModel>> methods, CancellationToken token)
     {
-        if (!option.ResolveReferencedAssembly)
-        {
-            return [with([])];
-        }
-
-        // Collect assembly names specified by attributes
-        var assemblyNames = new List<string>();
+        var regexes = new List<Regex>();
         foreach (var method in methods.SelectValue())
         {
             foreach (var attribute in method.Attributes)
             {
-                if (!String.IsNullOrEmpty(attribute.Assembly) && !assemblyNames.Contains(attribute.Assembly))
+                if (String.IsNullOrEmpty(attribute.Assembly) && (CreateRegex(attribute.Pattern) is { } regex))
                 {
-                    assemblyNames.Add(attribute.Assembly);
+                    regexes.Add(regex);
                 }
             }
         }
 
-        if (assemblyNames.Count == 0)
+        if (regexes.Count == 0)
         {
             return [with([])];
         }
 
+        var candidates = new List<(INamedTypeSymbol Symbol, bool IsAccessible)>();
+        foreach (var symbol in compilation.GetSymbolsWithName(name => regexes.Exists(x => x.IsMatch(name)), SymbolFilter.Type, token))
+        {
+            if ((symbol is INamedTypeSymbol type) && ClassFilter(type))
+            {
+                candidates.Add((type, IsAccessible(type, compilation)));
+            }
+        }
+
+        var treeOrder = new Dictionary<SyntaxTree, int>();
+        foreach (var tree in compilation.SyntaxTrees)
+        {
+            treeOrder[tree] = treeOrder.Count;
+        }
+
+        return new(candidates
+            .OrderBy(x => x.Symbol.Locations[0].SourceTree is { } tree && treeOrder.TryGetValue(tree, out var order) ? order : Int32.MaxValue)
+            .ThenBy(static x => x.Symbol.Locations[0].SourceSpan.Start)
+            .Select(static x => CreateCandidateModel(x.Symbol, x.IsAccessible))
+            .ToArray());
+    }
+
+    private static Regex? CreateRegex(string pattern)
+    {
+        if (String.IsNullOrEmpty(pattern))
+        {
+            return null;
+        }
+
+        try
+        {
+            return new Regex(pattern);
+        }
+        catch (ArgumentException)
+        {
+            return null;
+        }
+    }
+
+    private static EquatableArray<string> SelectRequestedAssemblies(ImmutableArray<Result<MethodModel>> methods)
+    {
+        var names = new SortedSet<string>(StringComparer.Ordinal);
+        foreach (var method in methods.SelectValue())
+        {
+            foreach (var attribute in method.Attributes)
+            {
+                if (!String.IsNullOrEmpty(attribute.Assembly))
+                {
+                    names.Add(attribute.Assembly);
+                }
+            }
+        }
+
+        return new(names.ToArray());
+    }
+
+    private static EquatableArray<ReferenceAssemblyModel> SelectReferenceCandidates(
+        ImmutableArray<MetadataReference> references,
+        CompilationKeyModel key,
+        OptionModel option,
+        EquatableArray<string> assemblyNames,
+        CancellationToken token)
+    {
+        if (!option.ResolveReferencedAssembly || (assemblyNames.Count == 0) || (key.Options is not CSharpCompilationOptions options))
+        {
+            return [with([])];
+        }
+
+        var compilation = CSharpCompilation.Create(key.AssemblyName, references: references, options: options);
         var list = new List<ReferenceAssemblyModel>();
-        foreach (var reference in compilation.References)
+        foreach (var reference in references)
         {
             token.ThrowIfCancellationRequested();
 
@@ -283,8 +389,8 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
             {
                 var candidates = assemblySymbol.GlobalNamespace
                     .GetTypeMembersRecursive(ClassFilter)
-                    .Where(x => compilation.IsSymbolAccessibleWithin(x, compilation.Assembly))
-                    .Select(CreateCandidateModel)
+                    .Where(x => !x.IsFileLocal && compilation.IsSymbolAccessibleWithin(x, compilation.Assembly))
+                    .Select(static x => CreateCandidateModel(x, true))
                     .ToArray();
                 list.Add(new ReferenceAssemblyModel(assemblySymbol.Identity.Name, new EquatableArray<CandidateClassModel>(candidates)));
             }
@@ -296,17 +402,18 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
     private static ResolvedRegistrationModel Resolve(
         ImmutableArray<Result<MethodModel>> methods,
         OptionModel option,
-        ImmutableArray<CandidateClassModel> candidates,
+        EquatableArray<CandidateClassModel> candidates,
         EquatableArray<ReferenceAssemblyModel> references,
         CancellationToken token)
     {
         // Combine ignore interfaces
-        var parts = option.IgnoreInterface.Split([','], StringSplitOptions.RemoveEmptyEntries);
+        var parts = option.IgnoreInterface.Split([','], StringSplitOptions.RemoveEmptyEntries).Select(static x => x.Trim()).ToArray();
         var ignoreInterfaces = new string[parts.Length + IgnoreInterfaces.Length];
         parts.CopyTo(ignoreInterfaces, 0);
         IgnoreInterfaces.CopyTo(ignoreInterfaces, parts.Length);
 
-        var classes = ImmutableArray.CreateBuilder<ClassModel>();
+        var classes = new List<ClassModel>();
+        var locations = new List<LocationInfo?>();
         var diagnostics = ImmutableArray.CreateBuilder<DiagnosticInfo>();
 
         // Group by class
@@ -322,13 +429,21 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
                 var registrations = ImmutableArray.CreateBuilder<RegistrationModel>();
                 foreach (var attribute in method.Attributes)
                 {
-                    // Compile class name pattern
-                    Regex regex;
-                    try
+                    if (!attribute.IsLifetimeDefined)
                     {
-                        regex = new Regex(attribute.Pattern);
+                        diagnostics.Add(new DiagnosticInfo(Diagnostics.UndefinedLifetime, attribute.Location, attribute.Lifetime.ToString(CultureInfo.InvariantCulture)));
+                        continue;
                     }
-                    catch (ArgumentException)
+
+                    // Compile class name pattern
+                    if (String.IsNullOrEmpty(attribute.Pattern))
+                    {
+                        diagnostics.Add(new DiagnosticInfo(Diagnostics.EmptyPattern, attribute.Location));
+                        continue;
+                    }
+
+                    var regex = CreateRegex(attribute.Pattern);
+                    if (regex is null)
                     {
                         diagnostics.Add(new DiagnosticInfo(Diagnostics.InvalidPattern, attribute.Location, attribute.Pattern));
                         continue;
@@ -350,9 +465,14 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
                         diagnostics.Add(new DiagnosticInfo(Diagnostics.ReferencedAssemblyDisabled, attribute.Location, attribute.Assembly));
                         continue;
                     }
+                    else if (FindReferenceCandidates(references, attribute.Assembly) is { } referenceCandidates)
+                    {
+                        targets = referenceCandidates;
+                    }
                     else
                     {
-                        targets = FindReferenceCandidates(references, attribute.Assembly);
+                        diagnostics.Add(new DiagnosticInfo(Diagnostics.AssemblyNotReferenced, attribute.Location, attribute.Assembly));
+                        continue;
                     }
 
                     var patternMatched = false;
@@ -376,6 +496,20 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
 
                         patternMatched = true;
 
+                        if (!candidate.IsAccessible)
+                        {
+                            diagnostics.Add(new DiagnosticInfo(Diagnostics.ClassNotAccessible, attribute.Location, candidate.Name));
+                            continue;
+                        }
+
+                        if ((attribute.AsType is not null) &&
+                            (attribute.AsType != candidate.FullyQualifiedName) &&
+                            !candidate.ServiceTypes.Contains(attribute.AsType))
+                        {
+                            diagnostics.Add(new DiagnosticInfo(Diagnostics.AsTypeNotImplemented, attribute.Location, candidate.Name));
+                            continue;
+                        }
+
                         // Select interfaces
                         var interfaceNames = candidate.Interfaces
                             .Where(x => !ignoreInterfaces.Contains(x.DisplayName))
@@ -384,7 +518,7 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
                         registrations.Add(new RegistrationModel(
                             candidate.FullyQualifiedName,
                             new EquatableArray<string>(interfaceNames),
-                            attribute.AsType,
+                            attribute.AsTypeName,
                             attribute.WithInterfaces,
                             attribute.Lifetime));
                     }
@@ -397,8 +531,7 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
 
                 // Build method registration model
                 methodRegistrations.Add(new MethodRegistrationModel(
-                    method.MethodAccessibility,
-                    method.MethodName,
+                    method.Signature,
                     method.ParameterName,
                     new EquatableArray<RegistrationModel>(registrations)));
             }
@@ -409,14 +542,48 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
                 group.Key.ClassName,
                 groupMethods[0].IsValueType,
                 new EquatableArray<MethodRegistrationModel>(methodRegistrations)));
+            locations.Add(groupMethods.SelectMany(static x => x.Attributes).Select(static x => x.Location).FirstOrDefault());
+        }
+
+        var generated = new List<ClassModel>();
+        var firsts = new Dictionary<string, ClassModel>(StringComparer.OrdinalIgnoreCase);
+        foreach (var index in Enumerable.Range(0, classes.Count).OrderBy(x => MakeHintName(classes[x]), StringComparer.Ordinal))
+        {
+            var classModel = classes[index];
+            var hintName = MakeHintName(classModel);
+            if (firsts.TryGetValue(hintName, out var first))
+            {
+                if (MakeHintName(first) != hintName)
+                {
+                    diagnostics.Add(new DiagnosticInfo(Diagnostics.HintNameCollision, locations[index], MakeDisplayName(classModel), MakeDisplayName(first)));
+                }
+
+                continue;
+            }
+
+            firsts.Add(hintName, classModel);
+        }
+
+        foreach (var classModel in classes)
+        {
+            if (firsts.TryGetValue(MakeHintName(classModel), out var first) && ReferenceEquals(first, classModel))
+            {
+                generated.Add(classModel);
+            }
         }
 
         return new ResolvedRegistrationModel(
-            new EquatableArray<ClassModel>(classes),
+            new EquatableArray<ClassModel>(generated),
             new EquatableArray<DiagnosticInfo>(diagnostics));
     }
 
-    private static EquatableArray<CandidateClassModel> FindReferenceCandidates(EquatableArray<ReferenceAssemblyModel> references, string assembly)
+    private static string MakeHintName(ClassModel classModel) =>
+        HintNameBuilder.Build(classModel.Namespace, classModel.ClassName);
+
+    private static string MakeDisplayName(ClassModel classModel) =>
+        String.IsNullOrEmpty(classModel.Namespace) ? classModel.ClassName : $"{classModel.Namespace}.{classModel.ClassName}";
+
+    private static EquatableArray<CandidateClassModel>? FindReferenceCandidates(EquatableArray<ReferenceAssemblyModel> references, string assembly)
     {
         foreach (var reference in references)
         {
@@ -426,28 +593,26 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
             }
         }
 
-        return [with([])];
+        return null;
     }
 
     // ------------------------------------------------------------
     // Diagnostics
     // ------------------------------------------------------------
 
-    private static void ReportMethodDiagnostics(SourceProductionContext context, ImmutableArray<Result<MethodModel>> methods)
+    private static void ReportOptionDiagnostics(SourceProductionContext context, OptionModel option)
     {
-        foreach (var info in methods.SelectError())
+        if (option.InvalidResolveReferencedAssembly is not null)
         {
-            context.ReportDiagnostic(info);
+            context.ReportDiagnostic(new DiagnosticInfo(Diagnostics.InvalidPropertyValue, (Location?)null, ResolveReferencedAssemblyProperty, option.InvalidResolveReferencedAssembly));
         }
     }
 
-    private static void ReportResolveDiagnostics(SourceProductionContext context, EquatableArray<DiagnosticInfo> diagnostics)
-    {
-        foreach (var info in diagnostics)
-        {
-            context.ReportDiagnostic(info);
-        }
-    }
+    private static void ReportMethodDiagnostics(SourceProductionContext context, ImmutableArray<Result<MethodModel>> methods, ImmutableArray<SyntaxTree> trees) =>
+        context.ReportDiagnostics(methods.SelectError().Distinct(), trees);
+
+    private static void ReportResolveDiagnostics(SourceProductionContext context, EquatableArray<DiagnosticInfo> diagnostics, ImmutableArray<SyntaxTree> trees) =>
+        context.ReportDiagnostics(diagnostics.Distinct(), trees);
 
     // ------------------------------------------------------------
     // Generator
@@ -460,7 +625,7 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
         var builder = new SourceBuilder();
         BuildSource(builder, classModel);
 
-        context.AddSource(HintNameBuilder.Build(classModel.Namespace, classModel.ClassName), builder);
+        context.AddSource(MakeHintName(classModel), builder);
     }
 
     private static void BuildSource(SourceBuilder builder, ClassModel classModel)
@@ -471,6 +636,7 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
 
         builder.AutoGenerated();
         builder.EnableNullable();
+        builder.Disable("CS0612, CS0618");
         builder.NewLine();
 
         // namespace
@@ -479,10 +645,6 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
             builder.Namespace(ns);
             builder.NewLine();
         }
-
-        // using
-        builder.Using("Microsoft.Extensions.DependencyInjection");
-        builder.NewLine();
 
         // class
         builder
@@ -508,16 +670,7 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
             // method
             builder
                 .Indent()
-                .Append(method.MethodAccessibility.ToText())
-                .Append(" static partial global::")
-                .Append(ServiceCollectionName)
-                .Append(' ')
-                .Append(method.MethodName)
-                .Append("(this global::")
-                .Append(ServiceCollectionName)
-                .Append(' ')
-                .Append(method.ParameterName)
-                .Append(')')
+                .Append(method.Signature)
                 .NewLine();
             builder.BeginScope();
 
@@ -557,7 +710,7 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
     {
         builder
             .Indent()
-            .Append(parameter)
+            .Append(ServiceCollectionExtensionsName)
             .Append(".Add");
         AddScope(builder, lifetime);
         builder.Append('<');
@@ -568,7 +721,9 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
         }
         builder
             .Append(service)
-            .Append(">();")
+            .Append(">(")
+            .Append(parameter)
+            .Append(");")
             .NewLine();
     }
 
@@ -576,15 +731,19 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
     {
         builder.
             Indent()
-            .Append(parameter)
+            .Append(ServiceCollectionExtensionsName)
             .Append(".Add");
         AddScope(builder, lifetime);
         builder
             .Append('<')
             .Append(serviceAs)
-            .Append(">(static x => x.GetRequiredService<")
+            .Append(">(")
+            .Append(parameter)
+            .Append(", static x => ")
+            .Append(ServiceProviderExtensionsName)
+            .Append(".GetRequiredService<")
             .Append(service)
-            .Append(">());")
+            .Append(">(x));")
             .NewLine();
     }
 
