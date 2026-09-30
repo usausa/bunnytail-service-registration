@@ -6,4 +6,6 @@ internal sealed record CandidateClassModel(
     string Namespace,
     string Name,
     string FullyQualifiedName,
-    EquatableArray<InterfaceModel> Interfaces);
+    bool IsAccessible,
+    EquatableArray<InterfaceModel> Interfaces,
+    EquatableArray<string> ServiceTypes);

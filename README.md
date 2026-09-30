@@ -51,17 +51,17 @@ internal sealed class TestService
 | Parameter | Description |
 |---|---|
 | `Lifetime` | Service lifetime: `Transient`, `Singleton`, or `Scoped` |
-| `Pattern` | Regex pattern to match class names to register. Matching no type is reported as warning BTSR0007 |
+| `Pattern` | Regex pattern to match class names to register. |
 | `Assembly` | Assembly to scan (defaults to the calling assembly) |
 | `Namespace` | Namespace prefix to filter classes |
-| `As` | Service type applied to every matched class, replacing the implementation type |
+| `As` | Service type applied to every matched class, replacing the implementation type. |
 | `WithInterfaces` | Also register each directly declared interface as a delegate to the implementation. Default `false` |
 
 ## MSBuild Properties
 
 | Property | Default | Description |
 |---|---|---|
-| `ServiceRegistrationResolveReferencedAssembly` | `false` | Enable scanning of referenced assemblies specified by the `Assembly` parameter. When disabled, only the containing assembly is scanned and `Assembly` usage is reported as warning BTSR0005 |
+| `ServiceRegistrationResolveReferencedAssembly` | `false` | Enable scanning of referenced assemblies specified by the `Assembly` parameter. When disabled, only the containing assembly is scanned and `Assembly` usage is reported as warning BTSR0005. |
 | `ServiceRegistrationIgnoreInterface` | (none) | Comma-separated interface names to exclude from registration. `System.IDisposable` and `System.IAsyncDisposable` are always excluded |
 
 ```xml

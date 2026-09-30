@@ -16,8 +16,8 @@
     <ItemGroup>
       <TfmSpecificPackageFile Include="..\BunnyTail.ServiceRegistration.Generator\bin\$(Configuration)\netstandard2.0\BunnyTail.ServiceRegistration.Generator.dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
       <TfmSpecificPackageFile Include="$(PKGSourceGenerateHelper)\lib\netstandard2.0\SourceGenerateHelper.dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
-      <TfmSpecificPackageFile Include="..\BunnyTail.ServiceRegistration.props" Pack="true" PackagePath="buildTransitive\BunnyTail.ServiceRegistration.props" Visible="false" />
-      <TfmSpecificPackageFile Include="..\BunnyTail.ServiceRegistration.targets" Pack="true" PackagePath="buildTransitive\BunnyTail.ServiceRegistration.targets" Visible="false" />
+      <TfmSpecificPackageFile Include="..\BunnyTail.ServiceRegistration.props" Pack="true" PackagePath="build\BunnyTail.ServiceRegistration.props" Visible="false" />
+      <TfmSpecificPackageFile Include="..\BunnyTail.ServiceRegistration.targets" Pack="true" PackagePath="build\BunnyTail.ServiceRegistration.targets" Visible="false" />
     </ItemGroup>
   </Target>
 
@@ -29,7 +29,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="SourceGenerateHelper" Version="1.28.0" GeneratePathProperty="true" PrivateAssets="all" />
+    <PackageReference Include="SourceGenerateHelper" Version="1.30.0" GeneratePathProperty="true" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>

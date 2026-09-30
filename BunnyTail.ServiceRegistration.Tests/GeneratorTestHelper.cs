@@ -27,7 +27,18 @@ internal static class GeneratorTestHelper
 
     public static string GetGeneratedSource(string source) => Runner.GetGeneratedSource(source);
 
+    public static GeneratorTestResult Run(string source) => Runner.Run(source);
+
+    public static GeneratorTestResult Run(string source, string ignoreInterface) =>
+        Runner.WithGlobalOption("build_property.ServiceRegistrationIgnoreInterface", ignoreInterface).Run(source);
+
+    public static IReadOnlyList<string> GetProblemIds(string source) =>
+        [.. Runner.GetProblems(source).Select(static x => x.Id)];
+
     public static IReadOnlyList<Diagnostic> GetDiagnosticsWithReference(string source) => ReferenceRunner.GetDiagnostics(source);
+
+    public static IReadOnlyList<Diagnostic> GetDiagnosticsWithOption(string name, string value, string source) =>
+        Runner.WithGlobalOption($"build_property.{name}", value).GetDiagnostics(source);
 
     public static string GetGeneratedSourceWithReference(string source) => ReferenceRunner.GetGeneratedSource(source);
 
