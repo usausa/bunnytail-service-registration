@@ -109,7 +109,7 @@ public sealed class GeneratedCodeTests
         var result = GeneratorTestHelper.Run(source);
 
         // Assert
-        Assert.Equal(["BTSR0012"], result.Problems.Select(static x => x.Id));
+        Assert.Equal(["BTSR0102"], result.Problems.Select(static x => x.Id));
         var generated = result.GeneratedSource(GeneratedName);
         Assert.Contains("AddSingleton<global::Test.Outer.VisibleService>(services)", generated, StringComparison.Ordinal);
         Assert.DoesNotContain("HiddenService", generated, StringComparison.Ordinal);

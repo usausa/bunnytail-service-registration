@@ -19,7 +19,7 @@
 
   <PropertyGroup>
     <ServiceRegistrationResolveReferencedAssembly>true</ServiceRegistrationResolveReferencedAssembly>
-    <ServiceRegistrationIgnoreInterface>BunnyTail.ServiceRegistration.INavigation,BunnyTail.ServiceRegistration.IMarkerIgnored</ServiceRegistrationIgnoreInterface>
+    <ServiceRegistrationIgnoreInterface>BunnyTail.ServiceRegistration.INavigation;BunnyTail.ServiceRegistration.IMarkerIgnored</ServiceRegistrationIgnoreInterface>
   </PropertyGroup>
 
   <Import Project="..\BunnyTail.ServiceRegistration.targets" />

@@ -17,44 +17,7 @@ public class DiagnosticTests
         """;
 
     // ------------------------------------------------------------
-    // Interface conflict
-    // ------------------------------------------------------------
-
-    [Fact]
-    public void Btsr0006ConflictingInterfaceRegistrationEmitsDiagnostic()
-    {
-        // Arrange
-        const string source =
-            """
-            using BunnyTail.ServiceRegistration;
-            using Microsoft.Extensions.DependencyInjection;
-
-            namespace Test;
-
-            public interface IService
-            {
-            }
-
-            public sealed class Service : IService
-            {
-            }
-
-            internal static partial class ServiceCollectionExtensions
-            {
-                [ServiceRegistration(Lifetime.Singleton, "Service$", As = typeof(IService), WithInterfaces = true)]
-                public static partial IServiceCollection AddServices(this IServiceCollection services);
-            }
-            """;
-
-        // Act
-        var diagnostics = GeneratorTestHelper.GetDiagnostics(source);
-
-        // Assert
-        Assert.Contains(diagnostics, static x => x.Id == "BTSR0006");
-    }
-
-    // ------------------------------------------------------------
-    // BTSR
+    // Declaration (00xx)
     // ------------------------------------------------------------
 
     [Fact]
@@ -70,6 +33,27 @@ public class DiagnosticTests
             """);
 
         Assert.Contains(diagnostics, static x => x.Id == "BTSR0001");
+    }
+
+    [Fact]
+    public void Btsr0001ImplementedPartialMethodEmitsDiagnostic()
+    {
+        var problems = GeneratorTestHelper.GetProblemIds(Head +
+            """
+            namespace Test;
+
+            public sealed class FooService;
+
+            internal static partial class ServiceCollectionExtensions
+            {
+                [ServiceRegistration(Lifetime.Singleton, "Service$")]
+                public static partial IServiceCollection AddServices(this IServiceCollection services);
+
+                public static partial IServiceCollection AddServices(this IServiceCollection services) => services;
+            }
+            """);
+
+        Assert.Equal(["BTSR0001"], problems);
     }
 
     [Fact]
@@ -103,7 +87,93 @@ public class DiagnosticTests
     }
 
     [Fact]
-    public void Btsr0004InvalidPatternEmitsDiagnostic()
+    public void Btsr0004UndefinedLifetimeEmitsDiagnostic()
+    {
+        var problems = GeneratorTestHelper.GetProblemIds(Head +
+            """
+            namespace Test;
+
+            public sealed class FooService;
+
+            internal static partial class ServiceCollectionExtensions
+            {
+                [ServiceRegistration((Lifetime)5, "Service$")]
+                public static partial IServiceCollection AddServices(this IServiceCollection services);
+            }
+            """);
+
+        Assert.Equal(["BTSR0004"], problems);
+    }
+
+    [Fact]
+    public void Btsr0005EmptyPatternEmitsDiagnostic()
+    {
+        var problems = GeneratorTestHelper.GetProblemIds(Head +
+            """
+            namespace Test;
+
+            public sealed class FooService;
+
+            internal static partial class ServiceCollectionExtensions
+            {
+                [ServiceRegistration(Lifetime.Singleton, "")]
+                public static partial IServiceCollection AddServices(this IServiceCollection services);
+            }
+            """);
+
+        Assert.Equal(["BTSR0005"], problems);
+    }
+
+    [Fact]
+    public void Btsr0006ClassNamesDifferingOnlyInCaseEmitDiagnostic()
+    {
+        var result = GeneratorTestHelper.Run(Head +
+            """
+            namespace Test;
+
+            public sealed class FooService;
+
+            internal static partial class Registrations
+            {
+                [ServiceRegistration(Lifetime.Singleton, "Service$")]
+                public static partial IServiceCollection AddServices(this IServiceCollection services);
+            }
+
+            internal static partial class registrations
+            {
+                [ServiceRegistration(Lifetime.Singleton, "Service$")]
+                public static partial IServiceCollection AddOthers(this IServiceCollection services);
+            }
+            """);
+
+        Assert.Contains(result.Problems, static x => x.Id == "BTSR0006");
+        Assert.DoesNotContain(result.Problems, static x => x.Id == "CS8785");
+        Assert.Single(result.GeneratedSources);
+    }
+
+    [Fact]
+    public void Btsr0007InvalidPropertyValueEmitsDiagnostic()
+    {
+        var diagnostics = GeneratorTestHelper.GetDiagnosticsWithOption("ServiceRegistrationResolveReferencedAssembly", "yes", Head +
+            """
+            namespace Test;
+
+            public sealed class FooService;
+
+            internal static partial class ServiceCollectionExtensions
+            {
+                [ServiceRegistration(Lifetime.Singleton, "Service$")]
+                public static partial IServiceCollection AddServices(this IServiceCollection services);
+            }
+            """);
+
+        var diagnostic = Assert.Single(diagnostics);
+        Assert.Equal("BTSR0007", diagnostic.Id);
+        Assert.Contains("value=[yes]", diagnostic.GetMessage(CultureInfo.InvariantCulture), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Btsr0008InvalidPatternEmitsDiagnostic()
     {
         var diagnostics = GeneratorTestHelper.GetDiagnostics(Head +
             """
@@ -114,11 +184,44 @@ public class DiagnosticTests
             }
             """);
 
-        Assert.Contains(diagnostics, static x => x.Id == "BTSR0004");
+        Assert.Contains(diagnostics, static x => x.Id == "BTSR0008");
     }
 
     [Fact]
-    public void Btsr0005AssemblyWithoutResolveOptionEmitsDiagnostic()
+    public void Btsr0009ConflictingInterfaceRegistrationEmitsDiagnostic()
+    {
+        // Arrange
+        const string source =
+            """
+            using BunnyTail.ServiceRegistration;
+            using Microsoft.Extensions.DependencyInjection;
+
+            namespace Test;
+
+            public interface IService
+            {
+            }
+
+            public sealed class Service : IService
+            {
+            }
+
+            internal static partial class ServiceCollectionExtensions
+            {
+                [ServiceRegistration(Lifetime.Singleton, "Service$", As = typeof(IService), WithInterfaces = true)]
+                public static partial IServiceCollection AddServices(this IServiceCollection services);
+            }
+            """;
+
+        // Act
+        var diagnostics = GeneratorTestHelper.GetDiagnostics(source);
+
+        // Assert
+        Assert.Contains(diagnostics, static x => x.Id == "BTSR0009");
+    }
+
+    [Fact]
+    public void Btsr0010AssemblyWithoutResolveOptionEmitsDiagnostic()
     {
         var diagnostics = GeneratorTestHelper.GetDiagnostics(Head +
             """
@@ -129,11 +232,95 @@ public class DiagnosticTests
             }
             """);
 
-        Assert.Contains(diagnostics, static x => x.Id == "BTSR0005");
+        Assert.Contains(diagnostics, static x => x.Id == "BTSR0010");
     }
 
     [Fact]
-    public void Btsr0007PatternWithNoMatchEmitsDiagnostic()
+    public void Btsr0011UnreferencedAssemblyEmitsDiagnostic()
+    {
+        var diagnostics = GeneratorTestHelper.GetDiagnosticsWithReference(Head +
+            """
+            namespace Test;
+
+            internal static partial class ServiceCollectionExtensions
+            {
+                [ServiceRegistration(Lifetime.Singleton, "Service$", Assembly = "Not.Referenced")]
+                public static partial IServiceCollection AddServices(this IServiceCollection services);
+            }
+            """);
+
+        Assert.Equal(["BTSR0011"], diagnostics.Select(static x => x.Id));
+    }
+
+    // ------------------------------------------------------------
+    // Convention matching (01xx)
+    // ------------------------------------------------------------
+
+    [Fact]
+    public void Btsr0101ClassNotAssignableToAsTypeEmitsDiagnostic()
+    {
+        // Arrange
+        const string source =
+            """
+            using BunnyTail.ServiceRegistration;
+            using Microsoft.Extensions.DependencyInjection;
+
+            namespace Test;
+
+            public interface IService;
+
+            public sealed class FooService : IService;
+
+            public sealed class BarService;
+
+            internal static partial class ServiceCollectionExtensions
+            {
+                [ServiceRegistration(Lifetime.Singleton, "Service$", As = typeof(IService))]
+                public static partial IServiceCollection AddServices(this IServiceCollection services);
+            }
+            """;
+
+        // Act
+        var result = GeneratorTestHelper.Run(source);
+
+        // Assert
+        var problem = Assert.Single(result.Problems);
+        Assert.Equal("BTSR0101", problem.Id);
+        Assert.True(problem.Location.IsInSource);
+        var generated = result.GeneratedSource("Test_ServiceCollectionExtensions.g.cs");
+        Assert.Contains("AddSingleton<global::Test.IService, global::Test.FooService>(services)", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain("BarService", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Btsr0102InaccessibleClassEmitsDiagnostic()
+    {
+        var result = GeneratorTestHelper.Run(Head +
+            """
+            namespace Test;
+
+            public sealed class Outer
+            {
+                private sealed class HiddenService;
+
+                internal sealed class VisibleService;
+            }
+
+            internal static partial class ServiceCollectionExtensions
+            {
+                [ServiceRegistration(Lifetime.Singleton, "Service$")]
+                public static partial IServiceCollection AddServices(this IServiceCollection services);
+            }
+            """);
+
+        var diagnostic = Assert.Single(result.Problems);
+        Assert.Equal("BTSR0102", diagnostic.Id);
+        Assert.Contains("class=[HiddenService]", diagnostic.GetMessage(CultureInfo.InvariantCulture), StringComparison.Ordinal);
+        Assert.DoesNotContain("HiddenService", result.AllGeneratedText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Btsr0103PatternWithNoMatchEmitsDiagnostic()
     {
         var diagnostics = GeneratorTestHelper.GetDiagnostics(Head +
             """
@@ -144,7 +331,7 @@ public class DiagnosticTests
             }
             """);
 
-        Assert.Contains(diagnostics, static x => x.Id == "BTSR0007");
+        Assert.Contains(diagnostics, static x => x.Id == "BTSR0103");
     }
 
     // ------------------------------------------------------------
@@ -234,46 +421,6 @@ public class DiagnosticTests
     }
 
     // ------------------------------------------------------------
-    // As
-    // ------------------------------------------------------------
-
-    [Fact]
-    public void Btsr0008ClassNotAssignableToAsTypeEmitsDiagnostic()
-    {
-        // Arrange
-        const string source =
-            """
-            using BunnyTail.ServiceRegistration;
-            using Microsoft.Extensions.DependencyInjection;
-
-            namespace Test;
-
-            public interface IService;
-
-            public sealed class FooService : IService;
-
-            public sealed class BarService;
-
-            internal static partial class ServiceCollectionExtensions
-            {
-                [ServiceRegistration(Lifetime.Singleton, "Service$", As = typeof(IService))]
-                public static partial IServiceCollection AddServices(this IServiceCollection services);
-            }
-            """;
-
-        // Act
-        var result = GeneratorTestHelper.Run(source);
-
-        // Assert
-        var problem = Assert.Single(result.Problems);
-        Assert.Equal("BTSR0008", problem.Id);
-        Assert.True(problem.Location.IsInSource);
-        var generated = result.GeneratedSource("Test_ServiceCollectionExtensions.g.cs");
-        Assert.Contains("AddSingleton<global::Test.IService, global::Test.FooService>(services)", generated, StringComparison.Ordinal);
-        Assert.DoesNotContain("BarService", generated, StringComparison.Ordinal);
-    }
-
-    // ------------------------------------------------------------
     // Reporting
     // ------------------------------------------------------------
 
@@ -300,7 +447,7 @@ public class DiagnosticTests
         var diagnostics = GeneratorTestHelper.GetDiagnostics(source);
 
         // Assert
-        Assert.Equal(["BTSR0001", "BTSR0007"], diagnostics.Select(static x => x.Id).Order());
+        Assert.Equal(["BTSR0001", "BTSR0103"], diagnostics.Select(static x => x.Id).Order());
         Assert.All(diagnostics, static x => Assert.True(x.Location.IsInSource));
     }
 
@@ -318,156 +465,5 @@ public class DiagnosticTests
         Assert.All(
             descriptors.Where(static x => x.DefaultSeverity == DiagnosticSeverity.Error),
             static x => Assert.Equal([WellKnownDiagnosticTags.NotConfigurable, WellKnownDiagnosticTags.Compiler], x.CustomTags));
-    }
-
-    [Fact]
-    public void Btsr0001ImplementedPartialMethodEmitsDiagnostic()
-    {
-        var problems = GeneratorTestHelper.GetProblemIds(Head +
-            """
-            namespace Test;
-
-            public sealed class FooService;
-
-            internal static partial class ServiceCollectionExtensions
-            {
-                [ServiceRegistration(Lifetime.Singleton, "Service$")]
-                public static partial IServiceCollection AddServices(this IServiceCollection services);
-
-                public static partial IServiceCollection AddServices(this IServiceCollection services) => services;
-            }
-            """);
-
-        Assert.Equal(["BTSR0001"], problems);
-    }
-
-    [Fact]
-    public void Btsr0009UndefinedLifetimeEmitsDiagnostic()
-    {
-        var problems = GeneratorTestHelper.GetProblemIds(Head +
-            """
-            namespace Test;
-
-            public sealed class FooService;
-
-            internal static partial class ServiceCollectionExtensions
-            {
-                [ServiceRegistration((Lifetime)5, "Service$")]
-                public static partial IServiceCollection AddServices(this IServiceCollection services);
-            }
-            """);
-
-        Assert.Equal(["BTSR0009"], problems);
-    }
-
-    [Fact]
-    public void Btsr0010EmptyPatternEmitsDiagnostic()
-    {
-        var problems = GeneratorTestHelper.GetProblemIds(Head +
-            """
-            namespace Test;
-
-            public sealed class FooService;
-
-            internal static partial class ServiceCollectionExtensions
-            {
-                [ServiceRegistration(Lifetime.Singleton, "")]
-                public static partial IServiceCollection AddServices(this IServiceCollection services);
-            }
-            """);
-
-        Assert.Equal(["BTSR0010"], problems);
-    }
-
-    [Fact]
-    public void Btsr0011UnreferencedAssemblyEmitsDiagnostic()
-    {
-        var diagnostics = GeneratorTestHelper.GetDiagnosticsWithReference(Head +
-            """
-            namespace Test;
-
-            internal static partial class ServiceCollectionExtensions
-            {
-                [ServiceRegistration(Lifetime.Singleton, "Service$", Assembly = "Not.Referenced")]
-                public static partial IServiceCollection AddServices(this IServiceCollection services);
-            }
-            """);
-
-        Assert.Equal(["BTSR0011"], diagnostics.Select(static x => x.Id));
-    }
-
-    [Fact]
-    public void Btsr0012InaccessibleClassEmitsDiagnostic()
-    {
-        var result = GeneratorTestHelper.Run(Head +
-            """
-            namespace Test;
-
-            public sealed class Outer
-            {
-                private sealed class HiddenService;
-
-                internal sealed class VisibleService;
-            }
-
-            internal static partial class ServiceCollectionExtensions
-            {
-                [ServiceRegistration(Lifetime.Singleton, "Service$")]
-                public static partial IServiceCollection AddServices(this IServiceCollection services);
-            }
-            """);
-
-        var diagnostic = Assert.Single(result.Problems);
-        Assert.Equal("BTSR0012", diagnostic.Id);
-        Assert.Contains("class=[HiddenService]", diagnostic.GetMessage(CultureInfo.InvariantCulture), StringComparison.Ordinal);
-        Assert.DoesNotContain("HiddenService", result.AllGeneratedText, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Btsr0013InvalidPropertyValueEmitsDiagnostic()
-    {
-        var diagnostics = GeneratorTestHelper.GetDiagnosticsWithOption("ServiceRegistrationResolveReferencedAssembly", "yes", Head +
-            """
-            namespace Test;
-
-            public sealed class FooService;
-
-            internal static partial class ServiceCollectionExtensions
-            {
-                [ServiceRegistration(Lifetime.Singleton, "Service$")]
-                public static partial IServiceCollection AddServices(this IServiceCollection services);
-            }
-            """);
-
-        var diagnostic = Assert.Single(diagnostics);
-        Assert.Equal("BTSR0013", diagnostic.Id);
-        Assert.Contains("value=[yes]", diagnostic.GetMessage(CultureInfo.InvariantCulture), StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Btsr0014ClassNamesDifferingOnlyInCaseEmitDiagnostic()
-    {
-        var result = GeneratorTestHelper.Run(Head +
-            """
-            namespace Test;
-
-            public sealed class FooService;
-
-            internal static partial class Registrations
-            {
-                [ServiceRegistration(Lifetime.Singleton, "Service$")]
-                public static partial IServiceCollection AddServices(this IServiceCollection services);
-            }
-
-            internal static partial class registrations
-            {
-                [ServiceRegistration(Lifetime.Singleton, "Service$")]
-                public static partial IServiceCollection AddOthers(this IServiceCollection services);
-            }
-            """);
-
-        Assert.Contains(result.Problems, static x => x.Id == "BTSR0014");
-        Assert.DoesNotContain(result.Problems, static x => x.Id == "CS8785");
-        Assert.Single(result.GeneratedSources);
     }
 }

@@ -22,7 +22,7 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
     private const string ServiceCollectionName = "Microsoft.Extensions.DependencyInjection.IServiceCollection";
 
     private const string ResolveReferencedAssemblyProperty = "ServiceRegistrationResolveReferencedAssembly";
-    private const string IgnoreInterfaceProperty = "build_property.ServiceRegistrationIgnoreInterface";
+    private const string IgnoreInterfaceProperty = "build_property._ServiceRegistrationIgnoreInterface";
 
     private const string ServiceCollectionExtensionsName = "global::Microsoft.Extensions.DependencyInjection.ServiceCollectionServiceExtensions";
     private const string ServiceProviderExtensionsName = "global::Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions";
@@ -109,7 +109,7 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
     private static OptionModel SelectOption(AnalyzerConfigOptionsProvider provider)
     {
         provider.GlobalOptions.TryGetValue<bool>(ResolveReferencedAssemblyProperty, out var resolveReferencedAssembly, out var invalidValue);
-        var ignoreInterface = provider.GlobalOptions.TryGetValue(IgnoreInterfaceProperty, out var value) ? value : string.Empty;
+        var ignoreInterface = provider.GlobalOptions.TryGetValue(IgnoreInterfaceProperty, out var value) ? Uri.UnescapeDataString(value) : string.Empty;
         return new OptionModel(resolveReferencedAssembly, invalidValue, ignoreInterface);
     }
 
@@ -407,7 +407,7 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
         CancellationToken token)
     {
         // Combine ignore interfaces
-        var parts = option.IgnoreInterface.Split([','], StringSplitOptions.RemoveEmptyEntries).Select(static x => x.Trim()).ToArray();
+        var parts = option.IgnoreInterface.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries).Select(static x => x.Trim()).Where(static x => x.Length > 0).ToArray();
         var ignoreInterfaces = new string[parts.Length + IgnoreInterfaces.Length];
         parts.CopyTo(ignoreInterfaces, 0);
         IgnoreInterfaces.CopyTo(ignoreInterfaces, parts.Length);

@@ -2,7 +2,14 @@
 
   <ItemGroup>
     <CompilerVisibleProperty Include="ServiceRegistrationResolveReferencedAssembly" />
-    <CompilerVisibleProperty Include="ServiceRegistrationIgnoreInterface" />
+    <CompilerVisibleProperty Include="_ServiceRegistrationIgnoreInterface" />
   </ItemGroup>
+
+  <Target Name="ComputeServiceRegistrationIgnoreInterface"
+          BeforeTargets="GenerateMSBuildEditorConfigFileShouldRun">
+    <PropertyGroup>
+      <_ServiceRegistrationIgnoreInterface>$(ServiceRegistrationIgnoreInterface.Replace('%', '%2525').Replace('#', '%2523').Replace(';', '%253B').Replace('%0D', '%250D').Replace('%0A', '%250A'))</_ServiceRegistrationIgnoreInterface>
+    </PropertyGroup>
+  </Target>
 
 </Project>

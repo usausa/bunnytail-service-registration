@@ -61,8 +61,8 @@ internal sealed class TestService
 
 | Property | Default | Description |
 |---|---|---|
-| `ServiceRegistrationResolveReferencedAssembly` | `false` | Enable scanning of referenced assemblies specified by the `Assembly` parameter. When disabled, only the containing assembly is scanned and `Assembly` usage is reported as warning BTSR0005. |
-| `ServiceRegistrationIgnoreInterface` | (none) | Comma-separated interface names to exclude from registration. `System.IDisposable` and `System.IAsyncDisposable` are always excluded |
+| `ServiceRegistrationResolveReferencedAssembly` | `false` | Enable scanning of referenced assemblies specified by the `Assembly` parameter. When disabled, only the containing assembly is scanned and `Assembly` usage is reported as warning BTSR0010. |
+| `ServiceRegistrationIgnoreInterface` | (none) | Interface names separated by `,` or `;` to exclude from registration. `System.IDisposable` and `System.IAsyncDisposable` are always excluded |
 
 ```xml
 <PropertyGroup>

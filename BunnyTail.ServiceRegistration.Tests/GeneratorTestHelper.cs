@@ -30,7 +30,7 @@ internal static class GeneratorTestHelper
     public static GeneratorTestResult Run(string source) => Runner.Run(source);
 
     public static GeneratorTestResult Run(string source, string ignoreInterface) =>
-        Runner.WithGlobalOption("build_property.ServiceRegistrationIgnoreInterface", ignoreInterface).Run(source);
+        Runner.WithGlobalOption("build_property._ServiceRegistrationIgnoreInterface", ignoreInterface).Run(source);
 
     public static IReadOnlyList<string> GetProblemIds(string source) =>
         [.. Runner.GetProblems(source).Select(static x => x.Id)];
