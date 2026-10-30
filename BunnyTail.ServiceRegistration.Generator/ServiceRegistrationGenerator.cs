@@ -189,9 +189,7 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
                 locationInfo));
         }
 
-#pragma warning disable IDE0028
         return list.ToArray();
-#pragma warning restore IDE0028
     }
 
     private static bool IsDefinedEnumValue(TypedConstant constant)
