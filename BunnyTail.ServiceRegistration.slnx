@@ -13,8 +13,8 @@
     <File Path=".editorconfig" />
     <File Path=".gitattributes" />
     <File Path=".gitignore" />
+    <File Path=".globalconfig" />
     <File Path="AGENTS.md" />
-    <File Path="Analyzers.ruleset" />
     <File Path="BunnyTail.ServiceRegistration.sln.DotSettings" />
     <File Path="BunnyTail.ServiceRegistration.props" />
     <File Path="BunnyTail.ServiceRegistration.targets" />
